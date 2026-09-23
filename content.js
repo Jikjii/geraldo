@@ -40,10 +40,10 @@ window.SITE = {
   name: "Geraldo Grell",
 
   // The line under your name in the sidebar. Markdown works here too.
-  bio: "Hi! I love to build, and I have an addiction to making Vocaloids.",
+  bio: "The world is moving fast, and I want to build faster, with startups at the edge of new technology.",
 
   // For search engines and link previews. Leave it out to reuse the bio.
-  description: "Geraldo Grell loves to build, makes Vocaloids, and is building Crewroom.",
+  description: "Geraldo Grell wants to build faster, with startups at the edge of new technology. Currently building Crewroom.",
 
   // The "Email" button in the sidebar copies this address. Remove it to hide the button.
   email: "swegeraldogrell@gmail.com",
