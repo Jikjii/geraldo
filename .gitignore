@@ -1,0 +1,6 @@
+# Local tools, not part of the site
+.claude/
+node_modules/
+
+# macOS Finder metadata
+.DS_Store

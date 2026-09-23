@@ -1,0 +1,493 @@
+/*
+ * site.css - light-wall portfolio.
+ * Design inspired by shreygups.com; original implementation.
+ *
+ * Layering inside #world (the scrolling "camera" content):
+ *   #pane-stack  z 2  opened pages, BELOW the canvas (revealed through holes it clears)
+ *   canvas#wall  z 3  the light wall, pointer-events: none
+ *   #deck        z 4  the sidebar (home page), above the canvas
+ *   #frame       z 6  a one-cell ring of unlit tiles around the whole world
+ */
+
+/* Metric-adjusted Arial so text barely moves if the web font is late.
+   The numbers approximate Schibsted Grotesk; retune them if you change --font. */
+@font-face {
+  font-family: "Schibsted Grotesk Fallback";
+  src: local("Arial"), local("ArialMT"), local("Helvetica");
+  ascent-override: 96%;
+  descent-override: 26%;
+  line-gap-override: 0%;
+  size-adjust: 99%;
+}
+
+:root {
+  /* The typeface. To swap it, change the Google Fonts <link> in index.html and this line. */
+  --font: "Schibsted Grotesk", "Schibsted Grotesk Fallback", Arial, sans-serif;
+
+  --bg: #140c08;        /* warm near-black; also every 1px gap between tiles */
+  --accent: #ff9f1c;
+  --line: #201309;      /* unlit tiles and rules: 5% --accent over --bg */
+  --ink: #fff6e8;       /* body text */
+  --link: #ffc8a0;      /* peach links */
+  --link-on: #ffb07a;   /* hovered and open-page links, focused buttons */
+
+  /* The grid. The script writes the same values; keep them in sync with CFG in site.js. */
+  --tile: 19px;
+  --gap: 1px;
+  --cell: 20px;
+  --fs: calc(var(--tile) * 0.7);
+  --lh: var(--cell);
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pinch-zoom;
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  color: var(--ink);
+  font: 400 var(--fs) / var(--lh) var(--font);
+  font-synthesis: none;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- Stage, world, wall ---------- */
+
+#stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+  touch-action: pinch-zoom; /* horizontal panning is driven by the script */
+}
+#stage::-webkit-scrollbar { display: none; }
+
+#world {
+  position: relative;
+  width: var(--world-w, 100%);
+  min-width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+#wall {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* The canvas can end on a partial row, so the outer ring of unlit tiles is
+   structural: every edge always shows one whole cell. */
+#frame {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.frame-edge {
+  position: absolute;
+  display: block;
+  background-color: var(--bg);
+}
+.frame-top,
+.frame-bottom {
+  left: 0;
+  z-index: 2;
+  width: 100%;
+  height: var(--cell);
+  background-image:
+    linear-gradient(180deg, transparent var(--tile), var(--bg) var(--tile)),
+    repeating-linear-gradient(90deg, var(--line) 0 var(--tile), var(--bg) var(--tile) var(--cell));
+}
+.frame-left,
+.frame-right {
+  top: 0;
+  width: var(--cell);
+  height: 100%;
+  background-image:
+    linear-gradient(90deg, transparent var(--tile), var(--bg) var(--tile)),
+    repeating-linear-gradient(180deg, var(--line) 0 var(--tile), var(--bg) var(--tile) var(--cell));
+}
+.frame-top { top: 0; }
+.frame-bottom { bottom: -1px; }
+.frame-left { left: 0; }
+.frame-right { right: -1px; }
+
+/* ---------- Sidebar and pane stack ---------- */
+
+#deck {
+  --text-amt: 1;
+  position: absolute;
+  top: var(--pane-top, 20px);
+  left: var(--side-pad, 20px);
+  z-index: 4;
+  width: var(--pane-w, 299px);
+  height: var(--pane-h, calc(100% - 40px));
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+  pointer-events: none; /* enabled once the script has booted */
+}
+#deck.show { pointer-events: auto; }
+
+#strip {
+  position: relative; /* containing block for the sound toggle */
+  display: flex;
+  align-items: stretch;
+  width: max-content;
+  height: 100%;
+  padding: 0;
+}
+
+#pane-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pane-shell {
+  --text-amt: 1;
+  position: absolute;
+  top: var(--pane-top, 20px);
+  left: calc(var(--side-pad, 20px) + var(--pane-depth, 1) * var(--pane-stride, 300px));
+  width: var(--pane-w, 299px);
+  height: var(--pane-h, calc(100% - 40px));
+  overflow: hidden;
+  background: var(--bg);
+  pointer-events: auto;
+}
+/* Separator: 1.5px of --line on each pane's left edge, after the 1px grid gap. */
+.pane-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  width: 1.5px;
+  background: var(--line);
+  pointer-events: none;
+}
+.pane-body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.pane-shell .pane {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+}
+
+/* ---------- Pane typography (16px / 24px, one cell of padding) ---------- */
+
+.pane {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: var(--pane-w, 299px);
+  height: 100%;
+  margin: 0;
+  padding: var(--cell);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y pinch-zoom;
+  color: var(--ink);
+  background: var(--bg);
+  font: 400 1rem / 1.5 var(--font);
+  -webkit-user-select: text;
+  user-select: text;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.pane > * {
+  position: relative;
+  opacity: var(--text-amt, 1);
+}
+
+.pane .name {
+  margin: 0 0 1em;
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+.pane p {
+  margin: 0 0 1em;
+  text-align: left;
+  hyphens: none;
+}
+.pane i,
+.pane em { font-style: italic; }
+
+.title-label {
+  position: relative;
+  display: inline-block;
+  max-width: calc(100% - 1.5rem);
+  line-height: 1;
+  vertical-align: baseline;
+}
+@supports (text-box-trim: trim-both) and (text-box-edge: cap alphabetic) {
+  .title-label,
+  .work-list .link-label {
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
+  }
+}
+
+/* Markdown bodies */
+.markdown-block h1,
+.markdown-block h2,
+.markdown-block h3,
+.markdown-block h4,
+.markdown-block h5,
+.markdown-block h6 {
+  margin: 0 0 1em;
+  font: inherit;
+  font-weight: 500;
+}
+.markdown-block strong,
+.markdown-block b { font-weight: 500; }
+.markdown-block ul,
+.markdown-block ol {
+  margin: 0 0 1em;
+  padding-left: 1.25em;
+}
+.markdown-block li > ul,
+.markdown-block li > ol { margin-bottom: 0; }
+.markdown-block blockquote {
+  margin: 0 0 1em;
+  padding-left: 1em;
+  border-left: 1px solid var(--line);
+}
+.markdown-block blockquote > :last-child { margin-bottom: 0; }
+.markdown-block pre,
+.markdown-block code { font: inherit; }
+.markdown-block pre {
+  margin: 0 0 1em;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+.markdown-block hr {
+  margin: 0 0 1em;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.markdown-block img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 1em;
+}
+.markdown-block del { text-decoration: line-through; }
+
+/* ---------- Links ---------- */
+
+.pane a {
+  color: var(--link);
+  text-decoration: none;
+  transition: color 0.4s linear;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+.pane a:hover,
+.pane a.is-on { color: var(--link-on); }
+.pane a.text-link { text-decoration: underline; }
+
+.work-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+nav.work-list { margin: 0 0 1em; }
+.work-list a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-height: 1.5em;
+}
+.work-list .link-label {
+  display: inline-block;
+  line-height: 1;
+}
+.work-list > a > .close-icon { display: none; }
+.work-list > a.is-on > .close-icon { display: inline-block; }
+
+/* The open-page dot: a filled circle in the link colour with a dark x knocked out. */
+.close-icon {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 0.62em;
+  height: 0.62em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.close-icon svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.close-icon path {
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+/* Close control beside pane titles, shown only when the stack doesn't fit. */
+.pane-close {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 0.15rem);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  transform: translateY(-50%);
+}
+#stage.stack-clipped .pane-close { display: inline-flex; }
+
+/* ---------- Sidebar bottom: social links, email, sound ---------- */
+
+.pane-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: auto 0 0;
+}
+.pane-bottom > :last-child,
+.pane-bottom > .markdown-block:last-child > :last-child { margin-bottom: 0; }
+
+.email-copy {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.email-copy:hover { color: var(--link-on); }
+
+#about .sound-toggle {
+  position: absolute;
+  right: var(--cell);
+  bottom: var(--cell);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--link);
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+#about .sound-toggle:hover { color: var(--link-on); }
+.sound-icon {
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sound-icon-on { display: none; }
+.sound-toggle[aria-pressed="true"] .sound-icon-on { display: block; }
+.sound-toggle[aria-pressed="true"] .sound-icon-off { display: none; }
+
+/* ---------- Focus: quiet, keyboard-only ---------- */
+
+:focus { outline: none; }
+.pane a:focus-visible,
+.email-copy:focus-visible,
+#about .sound-toggle:focus-visible,
+.noscript a:focus-visible {
+  outline: 1px solid var(--link-on);
+  outline: 1px solid color-mix(in srgb, var(--link-on) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+/* Links keep their colour for "hovered" and "open"; buttons may light up. */
+.email-copy:focus-visible,
+#about .sound-toggle:focus-visible { color: var(--link-on); }
+/* A long pane with no links becomes a Tab stop (so it can be scrolled). */
+.pane:focus-visible {
+  outline: 1px solid var(--link-on);
+  outline: 1px solid color-mix(in srgb, var(--link-on) 70%, transparent);
+  outline-offset: -2px;
+}
+.pane [tabindex="-1"]:focus,
+.pane [tabindex="-1"]:focus-visible { outline: none; }
+
+/* ---------- Without JavaScript ---------- */
+
+.noscript {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  padding: 40px;
+  color: var(--ink);
+  background: var(--bg);
+  font: 400 1rem / 1.5 var(--font);
+  -webkit-user-select: text;
+  user-select: text;
+}
+.noscript h1 {
+  margin: 0 0 1em;
+  font: inherit;
+  font-weight: 500;
+}
+.noscript p,
+.noscript ul { margin: 0 0 1em; }
+.noscript ul {
+  padding: 0;
+  list-style: none;
+}
+.noscript a { color: var(--link); text-decoration: none; }
+.noscript a:hover { color: var(--link-on); }

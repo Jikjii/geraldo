@@ -1,0 +1,7 @@
+# Netlify: every page address is served by the single-page app. Real files
+# (assets, content.js) are always served first; a missing file under /assets
+# is a real 404 instead of the page, as on Vercel and with dev.mjs.
+# Cloudflare Pages doesn't use these rules (it rejects the last one as a loop):
+# there, delete 404.html instead and every page address gets index.html.
+/assets/*  /404.html     404
+/*         /index.html   200
