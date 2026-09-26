@@ -14,13 +14,16 @@ implementation; none of that site's code, fonts, audio or writing is included.
 
 | File | What it is |
 |---|---|
-| `content.js` | **Everything you edit**: name, bio, pages, links, palettes, sound. |
+| `content.js` | **Everything you edit**: name, bio, pages, links, palettes, sound, the Manifesto's settings. |
+| `manifesto.js` | The text of the Manifesto (Markdown). Loaded only when someone opens it. |
 | `index.html` | The page shell: the site's folder (`<base href>`), meta tags for link previews, fonts, the no-JavaScript fallback. |
 | `404.html` | An exact copy of `index.html` (the deep-link fallback on GitHub Pages). |
 | `.nojekyll` | Empty. Tells GitHub Pages to serve the files as they are, without Jekyll. |
 | `.gitignore` | Keeps local tool settings (`.claude/`) and macOS `.DS_Store` files out of the repository. |
 | `assets/site.css` | Styles. The typeface and colours are variables at the top. |
 | `assets/site.js` | The engine: light wall, panes, routing, sound. |
+| `assets/manifesto.js`, `assets/manifesto.css` | The Manifesto's full-screen sequence, collage and reading page. Loaded on first open. |
+| `assets/manifesto/opening.jpg` | The Manifesto's opening image (see [Manifesto](#manifesto) for its rights). |
 | `assets/favicon.svg` | Static icon. While the tab is visible, the live icon follows the wall's colour. |
 | `assets/og.png` | The 1200x630 link-preview image. Regenerate it with `tools/make-og.mjs`. |
 | `tools/make-og.mjs` | Draws `assets/og.png` from your palette. |
@@ -97,6 +100,90 @@ the 404 page:
 ```sh
 cp index.html 404.html
 ```
+
+## Manifesto
+
+The first link under the bio, **Manifesto**, opens a full-screen page at
+`/manifesto` (on GitHub Pages, `https://jikjii.github.io/geraldo/manifesto`)
+instead of a pane:
+
+1. **The opening** (about 4.5 seconds): black, then the opening image flickers
+   on like an old monitor warming up, with green data streams sweeping across
+   it and terminal lines typing out underneath. A glitch, then a hard cut.
+2. **The title card** (about 3.5 seconds): the title cuts in line by line,
+   like the opening card of a Neon Genesis Evangelion episode.
+3. **The page**: a dense typographic collage built from the manifesto's own
+   ideas (in English and Japanese), then just the manifesto: its title and
+   subtitle centred on a screen of their own, the text in one centred
+   column, and at the end **RETURN** and **REPLAY**.
+
+A click, a tap, Space or Enter skips ahead; **REPLAY** plays the opening
+again; **CLOSE ×**, Esc, **RETURN** or the browser's Back button return to
+wherever the visitor was, with any open panes still open. With "reduce
+motion" turned on, the page opens straight on the collage and REPLAY plays a
+calm version (fades only).
+
+Nothing of this loads until someone opens it: the code, the text and the
+three typefaces ([Shippori Mincho B1](https://fonts.google.com/specimen/Shippori+Mincho+B1),
+[Archivo](https://fonts.google.com/specimen/Archivo) and
+[IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono), from Google
+Fonts) are fetched on the first open.
+
+**The text** lives in `manifesto.js`, as Markdown inside backticks, just like
+a page body:
+
+- The first `# heading` is the title. An `*italic*` line right under it is
+  the subtitle; while the Manifesto is open it is also the page's
+  description (the browser tab and the page's meta tags). Link previews and
+  search engines don't run the site's JavaScript: they read the fixed tags
+  at the top of `index.html`, which describe the home page, so a shared
+  `/manifesto` link previews as the home page, if at all.
+- Paragraphs, `[links](https://...)` (they open in a new tab), `*italics*` and
+  `**bold**` work as everywhere else, and the text is shown exactly as
+  written.
+- **The same escaping rule applies**: the text is wrapped in backticks, so
+  write `` \` `` for a backtick and `\${` for `${` (and `\\` for a
+  backslash). An unescaped one stops the Manifesto from opening (the page
+  then says it could not be loaded, and the browser console says why).
+
+**The settings** are in `content.js`, under `manifesto`:
+
+```js
+manifesto: {
+  label: "Manifesto",                        // the link, the tab title
+  image: "/assets/manifesto/opening.jpg",    // the opening image
+  terminal: [                                // the green lines typed under it
+    "> SUBJECT: EXISTING PERSON",
+    "> PROCEDURE: PROGRESSIVE INCORPORATION",
+    "> CONTINUITY: UNVERIFIED",
+  ],
+  titleCard: {
+    series: ["THE", "JEWEL"],                // the last line is set giant
+    label: "MANIFESTO:",
+    episode: "The Continuity of a Person.",  // wraps under the giant line if long
+  },
+},
+```
+
+- **To swap the opening image**, put your own square-ish image in
+  `assets/manifesto/` and point `image` at it (an address starting with `/`
+  is relative to the site's folder, as everywhere in `content.js`; match the
+  file name's letter case). Dark images with a bright centre work best: the
+  edges melt into black.
+- **The title card** takes one or more `series` lines (the last is the giant
+  one), then `label` in a condensed sans and the indented `episode` line.
+- `manifesto: false` (or no `manifesto` at all) removes the link and the page.
+
+The collage in `assets/manifesto.js` (the `LAND`, `MID` and `PORT`
+arrangements, for wide, squarish and tall screens) is made of phrases from
+the text. Its block sizes come from the words themselves, and blocks marked
+`opt(...)` come and go to suit the screen's shape, so edit phrases freely
+and every block still fills its space.
+
+**About the opening image.** `assets/manifesto/opening.jpg` is a still from
+the film *Ghost in the Shell* (1995); its rights belong to their owners. It
+is used here as a reference. Replace it with your own image if you prefer,
+or if you publish this site somewhere its use isn't appropriate.
 
 ## Preview locally
 
@@ -288,9 +375,12 @@ first click or key press (browsers don't allow sound before that).
 - **Esc** closes the deepest open page. If focus was inside it, focus returns
   to the link that opened it.
 - **M** toggles sound (unless `sound.shortcut` is `false`).
+- In the Manifesto, **Space** or **Enter** skips the opening, **Esc** closes
+  it, and focus returns to the Manifesto link. It is a dialog: Tab stays
+  inside it.
 - With "reduce motion" turned on in the operating system, the intro bloom is
   skipped, pages open and close instantly, and the wall stops drifting: it
-  only reacts to your pointer.
+  only reacts to your pointer. The Manifesto opens straight on its collage.
 - Visitors without JavaScript see your name, bio and links as plain text
   (the fallback in `index.html`); the pages themselves need JavaScript.
 
@@ -314,3 +404,7 @@ first click or key press (browsers don't allow sound before that).
 
 Design inspired by [shreygups.com](https://shreygups.com) by Shrey Gupta.
 Typeface: Schibsted Grotesk (SIL Open Font License).
+Manifesto typefaces: Shippori Mincho B1, Archivo and IBM Plex Mono (SIL Open
+Font License). Its opening sequence and title card pay homage to *Ghost in
+the Shell* (1995) and *Neon Genesis Evangelion*; the opening image is a still
+from the former, and its rights belong to their owners.

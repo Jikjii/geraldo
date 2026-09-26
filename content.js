@@ -8,6 +8,7 @@
  *   work item     ->  /work/<slug>
  *   projects page ->  /projects
  *   project item  ->  /projects/<slug>
+ *   manifesto     ->  /manifesto   (its text is in manifesto.js)
  * They sit inside the site's folder (<base href> at the top of index.html), so
  * on https://jikjii.github.io/geraldo/ the first work item lives at
  * https://jikjii.github.io/geraldo/work/<slug>.
@@ -71,6 +72,31 @@ window.SITE = {
 
   // The palette the light wall uses on the home page and on any page without its own.
   defaultPalette: "amber",
+
+  // Manifesto: the first link under the bio. It opens full screen at /manifesto:
+  // the opening image, then a title card, then a typographic collage and the
+  // full text. The text itself lives in manifesto.js (next to this file).
+  //   label:     the link, the page title and the dialog's name.
+  //   image:     the opening still (relative to the site's folder, like every
+  //              address here that starts with "/").
+  //   terminal:  the green lines typed under the image.
+  //   titleCard: `series` lines (the last one is set giant), then `label` in a
+  //              condensed sans and the `episode` line.
+  // Set `manifesto: false` to remove the link and the page.
+  manifesto: {
+    label: "Manifesto",
+    image: "/assets/manifesto/opening.jpg",
+    terminal: [
+      "> SUBJECT: EXISTING PERSON",
+      "> PROCEDURE: PROGRESSIVE INCORPORATION",
+      "> CONTINUITY: UNVERIFIED",
+    ],
+    titleCard: {
+      series: ["THE", "JEWEL"],
+      label: "MANIFESTO:",
+      episode: "The Continuity of a Person.",
+    },
+  },
 
   // Work: the first list in the sidebar. Each item opens a pane at /work/<slug>.
   //   palette: a name from the palettes list at the bottom of this file,

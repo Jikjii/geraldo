@@ -16,6 +16,7 @@
  *  10  Layout                    grid, world width, canvas DPR, bloom geometry
  *  11  Camera                    horizontal stage scroll, wheel, touch
  *  12  Router                    clean URLs in the site's folder (hash routes on file://), metadata
+ *  12b Manifesto overlay         /manifesto: a full-screen dialog; loads assets/manifesto.js on first open
  *  13  Pointer                   wake trail and sparks on the wall
  *  14  Sound                     your audio file, or a generated Web Audio pad
  *  15  Favicon                   live squircle in the corner tile's colour
@@ -573,6 +574,62 @@ if (socialLinks.length || email) {
   home.blocks.push({ kind: "nav", region: "bottom", label: "Elsewhere", links: socialLinks });
 }
 
+/* The Manifesto (content.js `manifesto`): the first link under the bio. It
+   opens a full-screen overlay at /manifesto instead of a pane, over whatever
+   stack is open, and its code, styles, text and fonts load on first open
+   (section 12b). `manifesto: false`, or leaving it out, removes it. */
+const MANIFESTO_PATH = "/manifesto";
+const MANIFESTO_TERMINAL = ["> SUBJECT: EXISTING PERSON", "> PROCEDURE: PROGRESSIVE INCORPORATION", "> CONTINUITY: UNVERIFIED"];
+
+/* A media address from content.js: "/..." is relative to the site's folder. */
+function mediaHref(value) {
+  const v = txt(value);
+  if (!v) return "";
+  if (v[0] === "/" && v[1] !== "/") return siteHref(v);
+  try { return new URL(v, doc.baseURI || location.href).href; } catch (_) { return ""; }
+}
+
+function readManifestoConfig(raw) {
+  if (!raw) return null;
+  const cfg = typeof raw === "object" ? raw : {};
+  const card = cfg.titleCard && typeof cfg.titleCard === "object" ? cfg.titleCard : {};
+  const lines = v => listOf(v).map(txt).filter(Boolean);
+  const series = lines(card.series);
+  return {
+    label: txt(cfg.label) || "Manifesto",
+    image: mediaHref(cfg.image),
+    terminal: Array.isArray(cfg.terminal) ? lines(cfg.terminal) : MANIFESTO_TERMINAL.slice(),
+    titleCard: {
+      series: series.length ? series : ["THE", "JEWEL"],
+      label: typeof card.label === "string" ? card.label.trim() : "MANIFESTO:",
+      episode: typeof card.episode === "string" ? card.episode.trim() : "The Continuity of a Person."
+    }
+  };
+}
+
+const manifestoConfig = readManifestoConfig(SITE.manifesto);
+// Not a pane: it never enters pageById, so stacks and panes ignore it.
+const manifestoPage = manifestoConfig ? {
+  id: MANIFESTO_PATH, path: MANIFESTO_PATH, title: manifestoConfig.label,
+  description: `${manifestoConfig.label} by ${siteName}.`
+} : null;
+if (manifestoPage) {
+  if (pageById[MANIFESTO_PATH]) warn(`A page already lives at ${MANIFESTO_PATH}; the Manifesto takes that address.`);
+  const link = { label: manifestoConfig.label, manifesto: true };
+  const firstNav = home.blocks.find(b => b.kind === "nav" && b.region !== "bottom");
+  if (firstNav) firstNav.links.unshift(link);
+  else home.blocks.splice(bio.trim() ? 1 : 0, 0, { kind: "nav", label: "More", links: [link] });
+}
+
+/* "/manifesto", or the same written with the site's folder. */
+function isManifestoPath(pathname) {
+  if (!manifestoPage) return false;
+  const p = String(pathname || "");
+  if (normalizePath(p) === MANIFESTO_PATH) return true;
+  const inner = stripBase(p);
+  return inner != null && normalizePath(inner) === MANIFESTO_PATH;
+}
+
 function primaryChainFor(page) {
   const chain = [];
   const seen = new Set();
@@ -929,6 +986,7 @@ function resolveLink(raw) {
   if (value[0] === "#") return null;
   // "/projects", "/assets/cv.pdf": relative to the site's folder (see siteHref).
   if (/^\/(?!\/)/.test(value)) {
+    if (isManifestoPath(value.split(/[?#]/)[0])) return { href: hrefFor(MANIFESTO_PATH), manifesto: true };
     const page = pageAt(value.split(/[?#]/)[0]);
     if (page) return { href: hrefFor(page.path), page };
     return { href: siteHref(value), external: false };
@@ -947,6 +1005,7 @@ function resolveLink(raw) {
   // you.github.io) is another site: it opens in a new tab like any other.
   const inSite = web && url.host === location.host && stripBase(url.pathname) != null;
   if (inSite) {
+    if (isManifestoPath(url.pathname) && !url.search) return { href: hrefFor(MANIFESTO_PATH), manifesto: true };
     const page = pageById[normalizePath(stripBase(url.pathname))];
     if (page && !url.search) return { href: hrefFor(page.path), page };
   }
@@ -960,6 +1019,7 @@ function makeLink(link) {
   if (target) {
     a.href = target.href;
     if (target.page) a.dataset.route = target.page.id;
+    else if (target.manifesto) a.dataset.manifesto = "true";
     else if (target.external) {
       a.target = "_blank";
       a.rel = "noopener noreferrer";
@@ -1013,7 +1073,11 @@ function renderNav(block, depth) {
   for (const item of block.links) {
     const a = el("a");
     const page = item.page ? pageById[item.page] : null;
-    if (page) {
+    if (item.manifesto) {
+      a.href = hrefFor(MANIFESTO_PATH);
+      a.dataset.manifesto = "true";
+      a.setAttribute("aria-haspopup", "dialog");
+    } else if (page) {
       a.href = hrefFor(page.path);
       a.dataset.pageId = page.id;
       a.dataset.sourceDepth = String(depth);
@@ -1021,7 +1085,8 @@ function renderNav(block, depth) {
       const target = resolveLink(item.url);
       if (!target) continue;
       a.href = target.href;
-      if (target.page) {
+      if (target.manifesto) a.dataset.manifesto = "true";
+      else if (target.page) {
         a.dataset.pageId = target.page.id;
         a.dataset.sourceDepth = String(depth);
       } else if (target.external) {
@@ -2156,8 +2221,8 @@ function isCurrentAddress(page) {
     : location.pathname === addressFor(page.path) && !location.hash && !location.search;
 }
 
-function commitHistory(mode, path, stack, keepSearch) {
-  const state = { siteRoute: path, siteStack: stack.slice() };
+function commitHistory(mode, path, stack, keepSearch, extra) {
+  const state = Object.assign({ siteRoute: path, siteStack: stack.slice() }, extra || null);
   const base = location.pathname + location.search;
   const url = FILE_MODE
     ? (path === "/" && mode === "replace" && !location.hash ? base : base + "#" + path)
@@ -2203,8 +2268,21 @@ function navigateTo(path, { stack = null, focusHeading = false, historyMode = "p
   syncMetadata(page);
 }
 
-/* Back / forward animate exactly like clicks, using the stack saved in history. */
+/* Back / forward animate exactly like clicks, using the stack saved in history.
+   The Manifesto's entry keeps the stack that was open under it. */
 function onHistoryChange() {
+  if (isManifestoPath(routePathFromLocation())) {
+    const hs = history.state;
+    const saved = hs && Array.isArray(hs.siteStack) ? validStack(hs.siteStack) : null;
+    const stack = saved || (desiredIds.length ? desiredIds.slice() : [home.id]);
+    requestPageStack(stack, {});
+    // Reached through history, so an earlier entry exists: closing goes back to it.
+    const back = !(hs && hs.manifestoBack === false);
+    if (!hs || hs.siteRoute !== MANIFESTO_PATH) commitHistory("replace", MANIFESTO_PATH, stack, true, { manifestoBack: back });
+    openManifesto({ back });
+    return;
+  }
+  if (manifestoState) closeManifesto();
   const route = routeFromLocation();
   const saved = history.state && Array.isArray(history.state.siteStack) ? validStack(history.state.siteStack) : null;
   const stack = saved && saved[saved.length - 1] === route.page.id ? saved : primaryChainFor(route.page);
@@ -2217,10 +2295,15 @@ function onHistoryChange() {
 
 function onContentClick(e) {
   const target = e.target instanceof Element ? e.target : null;
-  const a = target && target.closest("a[data-page-id], a[data-close-depth], a[data-route]");
+  const a = target && target.closest("a[data-page-id], a[data-close-depth], a[data-route], a[data-manifesto]");
   if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   if ((a.target && a.target !== "_self") || a.hasAttribute("download")) return;
   e.preventDefault();
+
+  if (a.hasAttribute("data-manifesto")) {
+    openManifesto({ push: true });
+    return;
+  }
 
   if (a.hasAttribute("data-close-depth")) {
     const depth = Math.max(1, Number(a.dataset.closeDepth) || 1);
@@ -2287,6 +2370,239 @@ function injectStructuredData() {
   script.type = "application/ld+json";
   script.textContent = JSON.stringify(data);
   doc.head.appendChild(script);
+}
+
+/* ======================================================================
+   12b. Manifesto overlay
+   ====================================================================== */
+
+/* /manifesto is a full-screen dialog above the whole stage, not a pane. This
+   section owns its element, its address and the wall: the wall stops while
+   it is open and carries on where it was on close, with the stack underneath
+   untouched. What happens inside (the opening sequence, the title card, the
+   collage and the text) is assets/manifesto.js, fetched on first open along
+   with assets/manifesto.css and the text (manifesto.js at the site's root;
+   the module adds its own fonts). The module registers
+   window.SiteManifesto = { mount(root, api) } and mount returns { destroy }.
+   The api it gets: markdown, config (content.js `manifesto`, addresses
+   resolved), siteName, renderMarkdown (the safe renderer above),
+   reducedMotion() and close({ keyboard }). */
+
+let manifestoState = null;   // { root, instance, back, keyboard, backTimer, closing } while open
+const assetLoads = Object.create(null);
+let manifestoPrefetched = false;   // the opening picture and font hosts, started once
+let manifestoPicture = null;       // (held, so the fetch can't be collected midway)
+
+/* A <script> or stylesheet, once (works over http and from disk alike). A
+   failed load is forgotten, so the next open tries again. */
+function loadAsset(tag, url) {
+  if (!assetLoads[url]) {
+    assetLoads[url] = new Promise((resolve, reject) => {
+      const node = doc.createElement(tag);
+      node.onload = () => resolve();
+      node.onerror = () => {
+        node.remove();
+        reject(new Error("Could not load " + url + "."));
+      };
+      if (tag === "link") {
+        node.rel = "stylesheet";
+        node.href = url;
+      } else {
+        node.async = true;
+        node.src = url;
+      }
+      doc.head.appendChild(node);
+    });
+    assetLoads[url].catch(() => { delete assetLoads[url]; });
+  }
+  return assetLoads[url];
+}
+
+/* The module, its styles and the text, in parallel. The opening picture and
+   the connections to Google Fonts (the module adds its typefaces) start at
+   the same time, without holding anything up. */
+function loadManifestoAssets() {
+  if (!manifestoPrefetched) {
+    manifestoPrefetched = true;
+    if (manifestoConfig.image) {
+      manifestoPicture = new Image();
+      manifestoPicture.decoding = "async";
+      manifestoPicture.src = manifestoConfig.image;
+    }
+    for (const [href, cors] of [["https://fonts.googleapis.com", false], ["https://fonts.gstatic.com", true]]) {
+      const hint = doc.createElement("link");
+      hint.rel = "preconnect";
+      hint.href = href;
+      if (cors) hint.crossOrigin = "anonymous";
+      doc.head.appendChild(hint);
+    }
+  }
+  const jobs = [loadAsset("link", assetURL("assets/manifesto.css"))];
+  if (!window.SiteManifesto) jobs.push(loadAsset("script", assetURL("assets/manifesto.js")));
+  if (typeof window.MANIFESTO_MD !== "string") jobs.push(loadAsset("script", assetURL("manifesto.js")));
+  return Promise.all(jobs).then(() => {
+    if (!window.SiteManifesto || typeof window.SiteManifesto.mount !== "function") {
+      throw new Error("assets/manifesto.js did not register itself.");
+    }
+    if (typeof window.MANIFESTO_MD !== "string") {
+      throw new Error("manifesto.js did not define window.MANIFESTO_MD. Look for an unescaped backtick (write \\`) or ${ (write \\${) in it.");
+    }
+  });
+}
+
+/* The italic line under the title: the page's description. */
+function manifestoSubtitle(md) {
+  let seenTitle = false;
+  for (const line of dedent(md)) {
+    if (RE_BLANK.test(line)) continue;
+    if (!seenTitle && /^ {0,3}#[ \t]/.test(line)) { seenTitle = true; continue; }
+    const m = /^\s*([*_])(.+)\1\s*$/.exec(line);
+    return m ? plainText(m[2]) : "";
+  }
+  return "";
+}
+
+/* push: a new history entry (opened from a link). back: closing returns to
+   the entry before it; otherwise closing replaces this entry with the page
+   underneath (the Manifesto was the first page of the visit). */
+function openManifesto({ push = false, back = true } = {}) {
+  if (!manifestoPage) return;
+  if (push) commitHistory("push", MANIFESTO_PATH, desiredIds, false, { manifestoBack: true });
+  syncMetadata(manifestoPage);
+  if (manifestoState) return;
+
+  const root = el("div", "manifesto");
+  root.id = "manifesto";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", manifestoConfig.label);
+  root.tabIndex = -1;
+  // Black at once, with a way out and a sign of life, until
+  // assets/manifesto.css and the module take over.
+  root.style.cssText = "position:fixed;inset:0;z-index:1000;background:#000";
+  root.appendChild(manifestoPlaceholder());
+  const st = { root, instance: null, back: push || back, keyboard: false, backTimer: 0, closing: false };
+  manifestoState = st;
+  pauseWall();
+  // The dialog takes the place of any pane heading still waiting for focus.
+  focusAfterOpen = null;
+  stage.inert = true;
+  stage.setAttribute("aria-hidden", "true");
+  doc.body.appendChild(root);
+  doc.addEventListener("focusin", keepManifestoFocus, true);
+  root.focus({ preventScroll: true });
+
+  loadManifestoAssets().then(() => {
+    if (manifestoState !== st) return;
+    const subtitle = manifestoSubtitle(window.MANIFESTO_MD);
+    if (subtitle) {
+      manifestoPage.description = subtitle;
+      syncMetadata(manifestoPage);
+    }
+    root.style.cssText = "";
+    st.instance = window.SiteManifesto.mount(root, {
+      markdown: window.MANIFESTO_MD,
+      config: manifestoConfig,
+      siteName,
+      renderMarkdown,
+      reducedMotion: () => reducedMotion,
+      close: opts => requestManifestoClose(opts)
+    });
+    // The placeholder's button may have had focus.
+    if (!root.contains(doc.activeElement)) root.focus({ preventScroll: true });
+  }).catch(err => {
+    if (manifestoState !== st) return;
+    warn("Manifesto: " + (err && err.message ? err.message : err));
+    showManifestoError(st);
+  });
+}
+
+/* CLOSE, Escape and RETURN. Opened from inside the site, that's Back (so
+   Forward opens it again); as the first page of a visit, it becomes the
+   page underneath in place. */
+function requestManifestoClose(opts) {
+  const st = manifestoState;
+  // Once Back is on its way, further requests wait for it (two quick ones
+  // would otherwise go back twice, past the page underneath).
+  if (!st || st.closing) return;
+  st.keyboard = !!(opts && opts.keyboard);
+  const hs = history.state;
+  if (st.back && hs && hs.siteRoute === MANIFESTO_PATH) {
+    st.closing = true;
+    // popstate closes it; if no earlier entry answers, close in place.
+    st.backTimer = setTimeout(() => { if (manifestoState === st) closeManifestoInPlace(); }, 700);
+    history.back();
+    return;
+  }
+  closeManifestoInPlace();
+}
+
+function closeManifestoInPlace() {
+  closeManifesto();
+  const stack = desiredIds.length ? desiredIds : [home.id];
+  const page = pageById[stack[stack.length - 1]] || home;
+  commitHistory("replace", page.path, stack, false);
+  syncMetadata(page);
+}
+
+function closeManifesto() {
+  const st = manifestoState;
+  if (!st) return;
+  manifestoState = null;
+  clearTimeout(st.backTimer);
+  if (st.instance && typeof st.instance.destroy === "function") {
+    try { st.instance.destroy(); } catch (err) { warn("Manifesto: " + (err && err.message)); }
+  }
+  doc.removeEventListener("focusin", keepManifestoFocus, true);
+  st.root.remove();
+  stage.inert = false;
+  stage.removeAttribute("aria-hidden");
+  resumeWall();
+  const link = deck.querySelector("a[data-manifesto]");
+  if (link) link.focus({ preventScroll: true, focusVisible: st.keyboard });
+}
+
+/* Focus stays inside the dialog (the stage is inert too; this is the net). */
+function keepManifestoFocus(e) {
+  const st = manifestoState;
+  if (st && e.target instanceof Node && !st.root.contains(e.target)) st.root.focus({ preventScroll: true });
+}
+
+/* What shows while the Manifesto's files load: CLOSE (styled like the real
+   one) and a blinking green cursor where the terminal will type. */
+function manifestoPlaceholder() {
+  const box = el("div");
+  const close = el("button", null, "CLOSE \u00d7");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close the manifesto");
+  close.style.cssText = "position:absolute;top:max(4px,env(safe-area-inset-top));right:max(6px,env(safe-area-inset-right));" +
+    "margin:0;padding:11px 12px;min-height:34px;border:0;background:none;color:rgba(255,255,255,.6);" +
+    "font:700 11.5px/1 var(--font);letter-spacing:.18em;cursor:pointer";
+  close.addEventListener("click", e => requestManifestoClose({ keyboard: e.detail === 0 }));
+  const cursor = el("span");
+  cursor.setAttribute("aria-hidden", "true");
+  cursor.style.cssText = "position:absolute;left:max(20px,4.2vw);bottom:max(26px,6.5vh);width:8px;height:14px;" +
+    "background:#74ffab;box-shadow:0 0 8px rgba(60,255,140,.6)";
+  if (!reducedMotion && typeof cursor.animate === "function") {
+    cursor.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0, offset: 0.5 }, { opacity: 0 }],
+      { duration: 1060, iterations: Infinity });
+  }
+  box.append(close, cursor);
+  return box;
+}
+
+function showManifestoError(st) {
+  const box = el("div");
+  box.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;" +
+    "justify-content:center;gap:1em;padding:24px;color:#fff;font:400 1rem/1.5 var(--font);text-align:center";
+  box.appendChild(el("p", null, "The manifesto could not be loaded. Check the connection and try again."));
+  const button = el("button", null, "Close");
+  button.type = "button";
+  button.style.cssText = "font:inherit;color:inherit;background:none;border:1px solid currentColor;padding:0.35em 1em;cursor:pointer";
+  button.addEventListener("click", () => requestManifestoClose());
+  box.appendChild(button);
+  st.root.replaceChildren(box);
+  button.focus({ preventScroll: true });
 }
 
 /* ======================================================================
@@ -2357,6 +2673,7 @@ function addSpark(cx, cy, strong, force) {
 }
 
 function onPointerDown(e) {
+  if (manifestoState) return;
   const t = e.target;
   if (t instanceof Node && (deck.contains(t) || paneStack.contains(t))) return;
   dragging = true;
@@ -2364,6 +2681,7 @@ function onPointerDown(e) {
   addSpark(e.clientX, e.clientY, true, true);
 }
 function onPointerMove(e) {
+  if (manifestoState) return;
   const t = e.target;
   if (t instanceof Node && paneStack.contains(t)) return;
   stampWake(e.clientX, e.clientY, false);
@@ -3196,6 +3514,21 @@ function frame(now) {
   raf = requestAnimationFrame(frame);
 }
 
+/* The Manifesto covers the whole screen, so the wall stops underneath it and
+   resumes exactly where it was (the clock skips the time it was away). */
+let wallPaused = false;
+function pauseWall() {
+  wallPaused = true;
+  if (raf) { cancelAnimationFrame(raf); raf = 0; }
+}
+function resumeWall() {
+  if (!wallPaused) return;
+  wallPaused = false;
+  if (raf || doc.hidden) return;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+
 function onMotionChange() {
   reducedMotion = !!(motionQuery && motionQuery.matches);
   if (!reducedMotion) return;
@@ -3255,6 +3588,14 @@ stage.addEventListener("click", e => {
 
 addEventListener("keydown", e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || isEditable(e.target)) return;
+  if (manifestoState) {
+    // The open Manifesto handles its own keys; until it has loaded, Escape closes it.
+    if (e.key === "Escape" && !manifestoState.instance) {
+      e.preventDefault();
+      requestManifestoClose({ keyboard: true });
+    }
+    return;
+  }
   if (e.key === "Escape") {
     if (intendedDepth() > 0) {
       e.preventDefault();
@@ -3274,9 +3615,9 @@ if (window.visualViewport) visualViewport.addEventListener("resize", scheduleSet
 // Only the stage scrolls; keep the document pinned.
 addEventListener("scroll", () => { if (window.scrollX || window.scrollY) scrollTo(0, 0); }, { passive: true });
 
-// No context menu on the wall; pages keep theirs.
+// No context menu on the wall; pages (and the Manifesto) keep theirs.
 doc.addEventListener("contextmenu", e => {
-  if (!(e.target instanceof Element) || !e.target.closest(".pane")) e.preventDefault();
+  if (!(e.target instanceof Element) || !e.target.closest(".pane, #manifesto")) e.preventDefault();
 });
 
 if (motionQuery) {
@@ -3290,6 +3631,7 @@ doc.addEventListener("visibilitychange", () => {
     showFallbackFavicon();
     return;
   }
+  if (wallPaused) return;
   last = performance.now();
   raf = requestAnimationFrame(frame);
 });
@@ -3298,20 +3640,30 @@ addEventListener("pageshow", e => {
 });
 
 /* Boot: mount the route's whole stack at once (no wipes), lay out, snap the
-   palette and camera. The intro bloom is the only motion on load. */
-const startRoute = routeFromLocation();
-requestPageStack(primaryChainFor(startRoute.page), { initial: true });
+   palette and camera. The intro bloom is the only motion on load. A deep link
+   to /manifesto boots the stack it was opened over (just the sidebar on a
+   first visit) and opens the Manifesto on top; the bloom then plays when it
+   closes. */
+const startManifesto = isManifestoPath(routePathFromLocation());
+const bootState = history.state;
+const startRoute = startManifesto ? { page: home, needsReplace: false } : routeFromLocation();
+const savedStack = startManifesto && bootState && Array.isArray(bootState.siteStack) ? validStack(bootState.siteStack) : null;
+requestPageStack(savedStack || primaryChainFor(startRoute.page), { initial: true });
 initSound();
 setup();
 snapPalette();
 panToDepth(mountedDepth(), { animate: false, opening: mountedDepth() > 0 });
 syncPaneInteractivity();
-commitHistory("replace", startRoute.page.path, desiredIds, true);
+// A reload keeps the entry's own way back.
+const startBack = !!(startManifesto && bootState && bootState.manifestoBack === true);
+commitHistory("replace", startManifesto ? MANIFESTO_PATH : startRoute.page.path, desiredIds, true,
+  startManifesto ? { manifestoBack: startBack } : null);
 syncMetadata(startRoute.page);
 injectStructuredData();
 deck.classList.add("show");
 deck.setAttribute("aria-hidden", "false");
 last = performance.now();
 raf = requestAnimationFrame(frame);
+if (startManifesto) openManifesto({ back: startBack });
 }
 })();
