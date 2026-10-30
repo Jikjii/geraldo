@@ -568,13 +568,15 @@ if (workPages.length) {
   home.blocks.push({ kind: "nav", label: txt(SITE.workTitle) || "Work", links: workPages.map(p => ({ label: p.title, page: p.id })) });
 }
 if (groupPages.length) {
-  home.blocks.push({ kind: "nav", label: "More", links: groupPages.map(p => ({ label: p.title, page: p.id })) });
+  home.blocks.push({ kind: "nav", label: "More", groups: true, links: groupPages.map(p => ({ label: p.title, page: p.id })) });
 }
 if (socialLinks.length || email) {
   home.blocks.push({ kind: "nav", region: "bottom", label: "Elsewhere", links: socialLinks });
 }
 
-/* The Manifesto (content.js `manifesto`): the first link under the bio. It
+/* The Manifesto (content.js `manifesto`): the first link of the list that
+   holds Projects and the other groups. With no projects or groups it gets a
+   list of its own, after the Work list (never inside it). It
    opens a full-screen overlay at /manifesto instead of a pane, over whatever
    stack is open, and its code, styles, text and fonts load on first open
    (section 12b). `manifesto: false`, or leaving it out, removes it. */
@@ -616,9 +618,12 @@ const manifestoPage = manifestoConfig ? {
 if (manifestoPage) {
   if (pageById[MANIFESTO_PATH]) warn(`A page already lives at ${MANIFESTO_PATH}; the Manifesto takes that address.`);
   const link = { label: manifestoConfig.label, manifesto: true };
-  const firstNav = home.blocks.find(b => b.kind === "nav" && b.region !== "bottom");
-  if (firstNav) firstNav.links.unshift(link);
-  else home.blocks.splice(bio.trim() ? 1 : 0, 0, { kind: "nav", label: "More", links: [link] });
+  const groupsNav = home.blocks.find(b => b.kind === "nav" && b.groups);
+  if (groupsNav) groupsNav.links.unshift(link);
+  else {
+    const at = home.blocks.findIndex(b => b.region === "bottom");
+    home.blocks.splice(at < 0 ? home.blocks.length : at, 0, { kind: "nav", label: "More", links: [link] });
+  }
 }
 
 /* "/manifesto", or the same written with the site's folder. */
@@ -977,6 +982,10 @@ function parseLinkAt(s, i) {
   return { label, url: unescape(url), title: unescape(title), end: e + 1 };
 }
 
+/* A file on this site (/resume.pdf, /assets/cv.pdf) rather than a page:
+   it opens in a new tab, so the site stays open behind it. */
+const isFilePath = p => /\.[a-z0-9]{1,8}$/i.test(String(p).split(/[?#]/)[0]);
+
 /* Classify a link: an internal page (opened as a pane), or a safe URL. */
 function resolveLink(raw) {
   const value = String(raw || "").trim();
@@ -989,7 +998,7 @@ function resolveLink(raw) {
     if (isManifestoPath(value.split(/[?#]/)[0])) return { href: hrefFor(MANIFESTO_PATH), manifesto: true };
     const page = pageAt(value.split(/[?#]/)[0]);
     if (page) return { href: hrefFor(page.path), page };
-    return { href: siteHref(value), external: false };
+    return { href: siteHref(value), external: false, file: isFilePath(value) };
   }
   let url;
   try { url = new URL(value, doc.baseURI || location.href); } catch (_) { return null; }
@@ -1009,7 +1018,7 @@ function resolveLink(raw) {
     const page = pageById[normalizePath(stripBase(url.pathname))];
     if (page && !url.search) return { href: hrefFor(page.path), page };
   }
-  return { href: url.href, external: web && !inSite };
+  return { href: url.href, external: web && !inSite, file: inSite && isFilePath(url.pathname) };
 }
 
 function makeLink(link) {
@@ -1020,9 +1029,9 @@ function makeLink(link) {
     a.href = target.href;
     if (target.page) a.dataset.route = target.page.id;
     else if (target.manifesto) a.dataset.manifesto = "true";
-    else if (target.external) {
+    else if (target.external || target.file) {
       a.target = "_blank";
-      a.rel = "noopener noreferrer";
+      a.rel = target.external ? "noopener noreferrer" : "noopener";
     }
   }
   if (link.title) a.title = link.title;
@@ -1089,9 +1098,9 @@ function renderNav(block, depth) {
       else if (target.page) {
         a.dataset.pageId = target.page.id;
         a.dataset.sourceDepth = String(depth);
-      } else if (target.external) {
+      } else if (target.external || target.file) {
         a.target = "_blank";
-        a.rel = "noopener noreferrer";
+        a.rel = target.external ? "noopener noreferrer" : "noopener";
       }
     }
     a.appendChild(el("span", "link-label", item.label || (page && page.title) || a.href));

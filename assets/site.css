@@ -441,6 +441,23 @@ nav.work-list { margin: 0 0 1em; }
 .sound-toggle[aria-pressed="true"] .sound-icon-on { display: block; }
 .sound-toggle[aria-pressed="true"] .sound-icon-off { display: none; }
 
+/* ---------- Short screens (phones held sideways) ---------- */
+
+/* The sidebar keeps every link on screen without scrolling: half-size gaps
+   and 20px link rows, then 20px lines throughout on the shortest screens.
+   The gaps rule stays inside .page-main so the bottom links keep their
+   zero bottom margin and line up with the sound toggle. */
+@media (max-height: 440px) {
+  #about .name,
+  #about .page-main p,
+  #about .page-main > nav.work-list { margin-bottom: 0.5em; }
+  #about .work-list a { min-height: 1.25em; }
+  #about .email-copy { line-height: 1.25; }
+}
+@media (max-height: 370px) {
+  #about { line-height: 1.25; }
+}
+
 /* ---------- Focus: quiet, keyboard-only ---------- */
 
 :focus { outline: none; }

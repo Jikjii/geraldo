@@ -51,7 +51,8 @@ themselves.
   each with a `title`, `slug` and `items`, and optionally an `intro`, a
   `palette` and a `description`.
 - **`social`**: the links at the bottom of the sidebar. The Email button, which
-  copies your address, comes after them.
+  copies your address, comes after them. A link to a file on this site, like
+  `{ label: "Resume", url: "/resume.pdf" }`, opens it in a new tab.
 
 Page bodies are Markdown inside backticks, so they can span several lines:
 
@@ -70,7 +71,8 @@ Supported: paragraphs, links, `*italics*`, `**bold**`, `` `code` ``,
 `# headings`, bullet and numbered lists, `> quotes`, `---` rules and
 `![images](/assets/photo.jpg)`. HTML is shown as plain text, never run.
 Links to your own pages (`[my projects](/projects)`) open as panes, in the
-same place the sidebar would open them; other sites open in a new tab.
+same place the sidebar would open them; other sites open in a new tab, and so
+do files on this site, like `/resume.pdf`.
 
 Addresses that start with `/` (in bodies, the bio, link `url`s and
 `sound.src`) are relative to **the site's folder**, not the domain. Write
@@ -103,9 +105,10 @@ cp index.html 404.html
 
 ## Manifesto
 
-The first link under the bio, **Manifesto**, opens a full-screen page at
-`/manifesto` (on GitHub Pages, `https://jikjii.github.io/geraldo/manifesto`)
-instead of a pane:
+The first link of the Projects list, **Manifesto**, opens a full-screen page
+at `/manifesto` (on GitHub Pages, `https://jikjii.github.io/geraldo/manifesto`)
+instead of a pane. With no projects or groups, it gets a list of its own,
+after the Work list.
 
 1. **The opening** (about 4.5 seconds): black, then the opening image flickers
    on like an old monitor warming up, with green data streams sweeping across
@@ -316,7 +319,8 @@ gives the brightness pattern its own texture. `defaultPalette` sets the home
 page's palette and the palette of any page without one.
 
 `content.js` comes with `amber` (the default), `olive`, `daylight`, `meadow`,
-`sky`, `ember`, `crimson`, `dusk`, `rose`, `mint` and `glacier`. They live in
+`sky`, `ember`, `crimson`, `dusk`, `rose`, `mint`, `glacier` and `margin`
+(Margin Lab's yellow). They live in
 that file, so if you delete one, pages that name it fall back to the default.
 Only `amber` is also built into `site.js`, as the fallback.
 

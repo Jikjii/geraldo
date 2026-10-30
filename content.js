@@ -73,7 +73,8 @@ window.SITE = {
   // The palette the light wall uses on the home page and on any page without its own.
   defaultPalette: "amber",
 
-  // Manifesto: the first link under the bio. It opens full screen at /manifesto:
+  // Manifesto: the first link of the Projects list (with no projects or groups,
+  // it gets a list of its own, after Work). It opens full screen at /manifesto:
   // the opening image, then a title card, then a typographic collage and the
   // full text. The text itself lives in manifesto.js (next to this file).
   //   label:     the link, the page title and the dialog's name.
@@ -105,14 +106,21 @@ window.SITE = {
   // workTitle (optional) names this list for screen readers; it defaults to "Work".
   // workTitle: "Work",
   work: [
-    // {
-    //   title: "Company",
-    //   slug: "company",
-    //   palette: "olive",
-    //   body: `
-    //     A few short paragraphs about what you built, owned and learned there.
-    //   `,
-    // },
+    {
+      title: "Margin Lab",
+      slug: "marginlab",
+      palette: "margin",
+      description: "Margin Lab builds robust, reproducible evals for AI coding agents.",
+      body: `
+        [Margin Lab](https://marginlab.ai/) builds robust, reproducible evals for AI coding agents, to help teams find the best agent for their code.
+
+        **Margin Evals** is an open-source eval runtime for CLI coding agents like Claude Code, Codex, Gemini CLI and OpenCode. It runs them against any benchmark, measures accuracy, tokens and duration, and captures full execution traces.
+
+        **Degradation Trackers** benchmark Claude Code and Codex daily on a curated SWE-Bench Pro subset, and flag statistically significant drops in performance.
+
+        Take a look at [marginlab.ai](https://marginlab.ai/).
+      `,
+    },
   ],
 
   // Projects: one "Projects" link in the sidebar opens a list, and each project
@@ -159,10 +167,12 @@ window.SITE = {
   ],
 
   // Links at the bottom of the sidebar. The Email button is added after them.
+  // Links to files on this site (like /resume.pdf) open in a new tab.
   social: [
     { label: "GitHub", url: "https://github.com/Jikjii" },
     { label: "X", url: "https://x.com/GERALDONOMICS" },
     { label: "LinkedIn", url: "https://www.linkedin.com/in/geraldo-grell/" },
+    { label: "Resume", url: "/resume.pdf" },
   ],
 
   // Light-wall palettes. Each is a loop of bright colours; the wall drifts through
@@ -181,5 +191,7 @@ window.SITE = {
     rose:     { seed: 53, stops: ["#ff3d6e", "#ff6b8b", "#ff9eb5", "#ffc2d1", "#ffe0e8", "#ff7a9c"] },
     mint:     { seed: 37, stops: ["#2ec4a0", "#4fe0b0", "#9ff0c8", "#dcfce8", "#f4f7a8", "#6fe3c1"] },
     glacier:  { seed: 97, stops: ["#5ac8fa", "#8fdcff", "#c9f0ff", "#f0fbff", "#7fb2ff", "#a8e6f0"] },
+    // Margin Lab's signal yellow, with its white type as glints.
+    margin:   { seed: 61, stops: ["#facc15", "#fde047", "#f3f4f6", "#fde047", "#facc15", "#fef08a"] },
   },
 };
