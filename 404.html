@@ -1,7 +1,9 @@
 <!doctype html>
 <!--
-  index.html and 404.html must stay identical (404.html is the deep-link fallback
-  for GitHub Pages). After editing this file, run:  cp index.html 404.html
+  index.html, 404.html and resume.pdf/index.html must stay identical (404.html is
+  the deep-link fallback for GitHub Pages; resume.pdf/index.html answers the
+  resume's address, /resume.pdf). After editing this file, run:
+    cp index.html 404.html && cp index.html resume.pdf/index.html
 
   Content lives in content.js. The values below are only what link previews and
   visitors without JavaScript see; the script keeps titles and descriptions in
@@ -55,13 +57,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Geraldo Grell">
 <meta name="application-name" content="Geraldo Grell">
-<link rel="canonical" href="https://jikjii.github.io/geraldo/">
 
-<!-- Link previews (EDIT: your name, description and full site address) -->
+<!-- Link previews (EDIT: your name, description and full site address).
+     No canonical link or og:url: this one page answers every address
+     (/resume.pdf too), so the script adds the right ones as people browse. -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="Geraldo Grell">
 <meta property="og:description" content="Geraldo Grell wants to build faster, with startups at the edge of new technology. Currently building Crewroom.">
-<meta property="og:url" content="https://jikjii.github.io/geraldo/">
 <meta property="og:image" content="https://jikjii.github.io/geraldo/assets/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
@@ -80,6 +82,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400;0,500;1,400&amp;display=block">
 
+<!-- The Resume (/resume.pdf) draws its pages with PDF.js from this CDN. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+
 <link rel="stylesheet" href="assets/site.css">
 <noscript><style>#stage { display: none; }</style></noscript>
 </head>
@@ -97,7 +102,7 @@
       <li><a href="https://github.com/Jikjii">GitHub</a></li>
       <li><a href="https://x.com/GERALDONOMICS">X</a></li>
       <li><a href="https://www.linkedin.com/in/geraldo-grell/">LinkedIn</a></li>
-      <li><a href="resume.pdf">Resume</a></li>
+      <li><a href="assets/Geraldo_Grell_Resume.pdf">Resume</a></li>
       <li><a href="mailto:swegeraldogrell@gmail.com">Email</a></li>
     </ul>
   </main>

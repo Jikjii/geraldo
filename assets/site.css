@@ -30,6 +30,7 @@
   --ink: #fff6e8;       /* body text */
   --link: #ffc8a0;      /* peach links */
   --link-on: #ffb07a;   /* hovered and open-page links, focused buttons */
+  --paper: #fff6e8;     /* the resume's pages are drawn on this */
 
   /* The grid. The script writes the same values; keep them in sync with CFG in site.js. */
   --tile: 19px;
@@ -177,12 +178,14 @@ body {
   pointer-events: none;
 }
 
+/* The script sets --pane-left and --pane-width on each shell (a wide page's
+   pane spans more columns); the fallbacks are the fixed unit. */
 .pane-shell {
   --text-amt: 1;
   position: absolute;
   top: var(--pane-top, 20px);
-  left: calc(var(--side-pad, 20px) + var(--pane-depth, 1) * var(--pane-stride, 300px));
-  width: var(--pane-w, 299px);
+  left: var(--pane-left, calc(var(--side-pad, 20px) + var(--pane-depth, 1) * var(--pane-stride, 300px)));
+  width: var(--pane-width, var(--pane-w, 299px));
   height: var(--pane-h, calc(100% - 40px));
   overflow: hidden;
   background: var(--bg);
@@ -440,6 +443,177 @@ nav.work-list { margin: 0 0 1em; }
 .sound-icon-on { display: none; }
 .sound-toggle[aria-pressed="true"] .sound-icon-on { display: block; }
 .sound-toggle[aria-pressed="true"] .sound-icon-off { display: none; }
+
+/* ---------- Resume (/resume.pdf) ---------- */
+
+/* Links to the file, then the PDF's pages on warm paper. Until a page is
+   drawn its sheet is an unlit tile (saying, after a moment, that the resume
+   is loading); the drawing then fades in. */
+.resume-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.25em;
+}
+.resume-sheets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+}
+.resume-sheet {
+  position: relative;
+  isolation: isolate;
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 612 / 792;
+  overflow: hidden;
+  background: var(--line);
+}
+/* The drawing is ink on clear pixels; the paper is its background, kept in
+   high-contrast themes (a dark one would put the black ink on black). */
+.resume-sheet > canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--paper);
+  forced-color-adjust: none;
+  opacity: 0;
+  transition: opacity 0.45s linear;
+}
+.resume-sheet.is-drawn > canvas { opacity: 1; }
+.resume-links a {
+  position: absolute;
+  z-index: 2;
+  border-radius: 2px;
+}
+.resume-links a:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* The usual pale focus ring would vanish on the paper. */
+.pane .resume-links a:focus-visible {
+  outline: 2px solid var(--bg);
+  outline-offset: 1px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.resume-note {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: calc(2 * var(--cell)) var(--cell);
+  text-align: center;
+}
+.resume-note p { margin: 0; }
+.resume-loading { animation: resume-loading 0.4s 0.5s both; }   /* no flash when it's quick */
+@keyframes resume-loading { from { opacity: 0; } }
+.resume-error {
+  aspect-ratio: auto;
+  padding: var(--cell);
+}
+
+/* PDF.js's text layer, from pdf_viewer.css of the same version (4.10.38;
+   Copyright 2014 Mozilla Foundation, Apache License 2.0), trimmed to what the
+   resume uses: transparent text over the drawing, sized by --scale-factor, so
+   it can be selected and copied. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+}
+.textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) { z-index: 1; }
+.textLayer span.markedContent {
+  top: 0;
+  height: 0;
+}
+.textLayer span[role="img"] {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+.textLayer ::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); }
+.textLayer br::selection { background: transparent; }
+/* Keeps a drag past the end of a line from selecting the rest of the page
+   (watchSelection in site.js). */
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.textLayer.selecting .endOfContent { top: 0; }
+/* PDF.js measures text on a canvas it adds to the page. */
+.hiddenCanvasElement {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resume-sheet > canvas { transition: none; }
+  .resume-loading { animation: none; }
+}
+
+/* Printed (or saved as a PDF) with the Resume open, the page is its pages
+   alone, one to a sheet of paper, letter or A4, on white, with the text
+   still selectable. site.js gives each page its --print-width, and the
+   --print-scale that sizes its text layer to match. Only these pages print
+   without the browser's margins (and its header and footer). */
+@media print {
+  @page resume { margin: 0; }
+  html:has(.resume-sheets) body { page: resume; }
+  html:has(.resume-sheets),
+  html:has(.resume-sheets) body {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+  html:has(.resume-sheets) :is(#stage, #world, #pane-stack, .pane-shell, .pane-body, .pane) {
+    position: static;
+    width: auto;
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    overflow: visible;
+    background: none;
+  }
+  html:has(.resume-sheets) :is(#wall, #deck, #frame, .pane-shell:not(:has(.resume-sheets)), .pane .name, .resume-actions),
+  html:has(.resume-sheets) .pane-shell::before { display: none; }
+  html:has(.resume-sheets) .pane > * { opacity: 1; }
+  .resume-sheets { gap: 0; }
+  .resume-sheet {
+    --scale-factor: var(--print-scale) !important;
+    width: var(--print-width);
+    margin: 0 auto;
+    background: none;
+    break-inside: avoid;
+    break-after: page;
+  }
+  .resume-sheet:last-child { break-after: auto; }
+  .resume-sheet > canvas { background: none; }
+}
 
 /* ---------- Short screens (phones held sideways) ---------- */
 

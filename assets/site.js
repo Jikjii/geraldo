@@ -1,7 +1,9 @@
 /*!
  * site.js - the light-wall portfolio engine.
- * Design inspired by shreygups.com. Original implementation: no dependencies,
- * no build step. All content comes from window.SITE (content.js).
+ * Design inspired by shreygups.com. Original implementation, apart from the
+ * resume's text selection, adapted from PDF.js (section 12c). No build step,
+ * nothing to install: the resume loads PDF.js from a CDN when it's needed.
+ * All content comes from window.SITE (content.js).
  *
  * Contents
  *   1  Config and tokens         CFG, colours, DOM handles, motion preference
@@ -17,6 +19,7 @@
  *  11  Camera                    horizontal stage scroll, wheel, touch
  *  12  Router                    clean URLs in the site's folder (hash routes on file://), metadata
  *  12b Manifesto overlay         /manifesto: a full-screen dialog; loads assets/manifesto.js on first open
+ *  12c Resume                    /resume.pdf: a wide pane that draws the PDF with PDF.js (loaded on first need)
  *  13  Pointer                   wake trail and sparks on the wall
  *  14  Sound                     your audio file, or a generated Web Audio pad
  *  15  Favicon                   live squircle in the corner tile's colour
@@ -470,7 +473,10 @@ const siteURL = txt(SITE.url).replace(/\/+$/, "");
 const email = txt(SITE.email);
 
 /* Every page: { id (= its path), path, title, parent, palette, description, blocks }.
-   Blocks are { kind: "markdown", markdown } or { kind: "nav", label, links }. */
+   Blocks are { kind: "markdown", markdown }, { kind: "nav", label, links } or
+   { kind: "resume" }. A page may also ask for a wider pane (`width`, in px; see
+   colsFor) and, when it is the address a visit starts on, to open only as
+   the intro bloom finishes (`introOpen`; see frame). */
 const pageById = Object.create(null);
 const pageList = [];
 function addPage(page) {
@@ -558,6 +564,37 @@ groupDefs.forEach(group => {
   page.blocks.push({ kind: "nav", label: title, links });
   groupPages.push(page);
 });
+
+/* The Resume (content.js `resume`): a wide pane at /resume.pdf that shows the
+   PDF itself (section 12c). The address looks like the file, so it can be
+   shared as one; the file lives at `resume.file`. Nothing adds a link to it:
+   content.js links to "/resume.pdf" wherever it likes (the sidebar's social
+   links, a page body). Opened from a shared link, the site arrives first and
+   the resume wipes in as the bloom finishes. `resume: false`, or leaving it
+   out, removes it. */
+const RESUME_PATH = "/resume.pdf";
+const RESUME_WIDTH = 800;   // px: a letter page at ~1.24x (10pt text reads at ~12px)
+
+function readResumeConfig(raw) {
+  if (!raw) return null;
+  const cfg = typeof raw === "object" ? raw : {};
+  const file = mediaHref(cfg.file);
+  if (!file) {
+    warn("content.js `resume` has no `file` (the PDF's address, like \"/assets/resume.pdf\"); leaving it out.");
+    return null;
+  }
+  return { label: txt(cfg.label) || "Resume", file, palette: cfg.palette, description: txt(cfg.description) };
+}
+
+const resumeConfig = readResumeConfig(SITE.resume);
+const resumePage = resumeConfig ? addPage({
+  id: RESUME_PATH, path: RESUME_PATH, title: resumeConfig.label, parent: "/",
+  palette: resolvePagePalette(resumeConfig.palette, RESUME_PATH),
+  description: resumeConfig.description || `${siteName}'s ${resumeConfig.label.toLowerCase()}.`,
+  width: RESUME_WIDTH,
+  introOpen: true,
+  blocks: [{ kind: "resume" }]
+}) : null;
 
 const socialLinks = listOf(SITE.social)
   .filter(s => s && txt(s.label) && txt(s.url))
@@ -982,8 +1019,8 @@ function parseLinkAt(s, i) {
   return { label, url: unescape(url), title: unescape(title), end: e + 1 };
 }
 
-/* A file on this site (/resume.pdf, /assets/cv.pdf) rather than a page:
-   it opens in a new tab, so the site stays open behind it. */
+/* A file on this site (/assets/cv.pdf) rather than a page: it opens in a new
+   tab, so the site stays open behind it. Pages win: /resume.pdf is a page. */
 const isFilePath = p => /\.[a-z0-9]{1,8}$/i.test(String(p).split(/[?#]/)[0]);
 
 /* Classify a link: an internal page (opened as a pane), or a safe URL. */
@@ -1021,19 +1058,23 @@ function resolveLink(raw) {
   return { href: url.href, external: web && !inSite, file: inSite && isFilePath(url.pathname) };
 }
 
+/* Point a body link at its target: a page opens where it always lives, the
+   Manifesto as its overlay, other sites and files in a new tab. */
+function aimLink(a, target) {
+  a.href = target.href;
+  if (target.page) a.dataset.route = target.page.id;
+  else if (target.manifesto) a.dataset.manifesto = "true";
+  else if (target.external || target.file) {
+    a.target = "_blank";
+    a.rel = target.external ? "noopener noreferrer" : "noopener";
+  }
+}
+
 function makeLink(link) {
   const a = el("a", "text-link");
   renderInline(link.label, a);
   const target = resolveLink(link.url);
-  if (target) {
-    a.href = target.href;
-    if (target.page) a.dataset.route = target.page.id;
-    else if (target.manifesto) a.dataset.manifesto = "true";
-    else if (target.external || target.file) {
-      a.target = "_blank";
-      a.rel = target.external ? "noopener noreferrer" : "noopener";
-    }
-  }
+  if (target) aimLink(a, target);
   if (link.title) a.title = link.title;
   return a;
 }
@@ -1140,6 +1181,7 @@ function renderPage(page, depth) {
   for (const block of page.blocks) {
     let node;
     if (block.kind === "nav") node = renderNav(block, depth);
+    else if (block.kind === "resume") node = renderResume();
     else {
       node = el("div", "markdown-block");
       node.appendChild(renderMarkdown(block.markdown));
@@ -1220,12 +1262,13 @@ let cellOpen = new Uint8Array(0);    // 1 = cell cleared, page shows through
 let cellEvent = new Uint32Array(0);  // id of the last wave or mark that wrote the cell
 let eventSeq = 0;                    // one counter for waves and marks: newer always wins
 const waves = [];
-let maskCols = 0, maskRows = 0, maskHome = 0, maskPane = 0, maskDepth = -1;
+let maskCols = 0, maskRows = 0, maskDepth = -1, maskSig = "";
+let maskLeft = [], maskSpan = [];    // each pane's columns when the mask was last laid out
 
 function bandOf(start, end) {
   const first = Math.max(1, start);
   const last = Math.max(first, end);
-  return { left: homeRight + (first - 1) * paneCols, right: homeRight + last * paneCols };
+  return { left: paneLeftCol(first), right: paneLeftCol(last) + paneColsAt(last) };
 }
 
 function setIntent(start, end, open) {
@@ -1290,8 +1333,8 @@ function settleBand(start, end, open) {
 
 function bandIs(open, start, end) {
   if (start < 1 || end < start) return true;
-  const left = homeRight + (start - 1) * paneCols;
-  const hi = Math.min(homeRight + end * paneCols, cols - 1);
+  const { left, right } = bandOf(start, end);
+  const hi = Math.min(right, cols - 1);
   const want = open ? 1 : 0;
   for (let j = 1; j < rows - 1; j++) {
     const row = j * cols;
@@ -1301,18 +1344,27 @@ function bandIs(open, start, end) {
 }
 
 /* Rebuild the mask whenever the grid changes (resize, or a pane mounting
-   or unmounting changes the world width). Bands are resampled by relative
-   position and waves keep their relative progress, so nothing jumps. */
+   or unmounting changes the world width or a pane's width). Each pane's band
+   is resampled by relative position and waves keep their relative progress,
+   so nothing jumps. A depth with no pane before (or after) has nothing to
+   carry over. */
 function syncMask() {
   const depth = mountedDepth();
-  if (maskDepth >= 0 && maskCols === cols && maskRows === rows && maskHome === homeRight &&
-      maskPane === paneCols && maskDepth === depth) return;
+  let sig = cols + "x" + rows;
+  for (let d = 1; d <= depth; d++) sig += "," + paneLeftCol(d) + "+" + paneColsAt(d);
+  if (maskDepth >= 0 && sig === maskSig) return;
   const had = maskDepth >= 0;
   const oldOpen = cellOpen, oldEvent = cellEvent;
-  const oCols = maskCols, oRows = maskRows, oHome = maskHome, oPane = maskPane, oDepth = maskDepth;
+  const oCols = maskCols, oRows = maskRows, oDepth = maskDepth, oLeftAt = maskLeft, oSpanAt = maskSpan;
   cellOpen = new Uint8Array(cols * rows);
   cellEvent = new Uint32Array(cols * rows);
-  maskCols = cols; maskRows = rows; maskHome = homeRight; maskPane = paneCols; maskDepth = depth;
+  maskCols = cols; maskRows = rows; maskDepth = depth; maskSig = sig;
+  maskLeft = [0];
+  maskSpan = [0];
+  for (let d = 1; d <= depth; d++) {
+    maskLeft[d] = paneLeftCol(d);
+    maskSpan[d] = paneColsAt(d);
+  }
 
   if (!had) {
     waves.length = 0;
@@ -1320,17 +1372,17 @@ function syncMask() {
     return;
   }
 
-  const count = Math.max(oDepth, depth);
+  const count = Math.min(oDepth, depth);
   for (let d = 1; d <= count; d++) {
-    const oLeft = oHome + (d - 1) * oPane;
-    const nLeft = homeRight + (d - 1) * paneCols;
+    const oLeft = oLeftAt[d], oSpan = oSpanAt[d];
+    const nLeft = maskLeft[d], nSpan = maskSpan[d];
     for (let j = 1; j < rows - 1; j++) {
       const oj = Math.min(oRows - 2, j);
       if (oj < 1) continue;
-      for (let n = 0; n < paneCols; n++) {
+      for (let n = 0; n < nSpan; n++) {
         const i = nLeft + n;
         if (i >= cols - 1) break;
-        const oi = oLeft + Math.min(oPane - 1, Math.floor(((n + 0.5) / paneCols) * oPane));
+        const oi = oLeft + Math.min(oSpan - 1, Math.floor(((n + 0.5) / nSpan) * oSpan));
         if (oi >= oCols - 1) continue;
         cellOpen[j * cols + i] = oldOpen[oj * oCols + oi];
         cellEvent[j * cols + i] = oldEvent[oj * oCols + oi];
@@ -1345,13 +1397,18 @@ function syncMask() {
     w.left = band.left;
     w.right = band.right;
     w.x = band.left - LEAD + (band.right - band.left - 1 + 2 * LEAD) * progress;
-    w.speed = waveSpeed();
+    w.speed = waveSpeed(w.start, w.end);
   }
 }
 
-/* One physical tile speed for every wipe: (15 + 2.3) cols / 1.3s = 266px/s. */
-function waveSpeed() {
-  return (paneCols + 2 * LEAD) / CFG.revealIn;
+/* One physical tile speed for every wipe of ordinary panes: (15 + 2.3) cols
+   / 1.3s = 266px/s. A band holding a wide pane (the resume) runs faster, by
+   the square root of how much wider it is, so it takes ~1.5x as long rather
+   than 2.5x. */
+function waveSpeed(start, end) {
+  let widest = paneCols;
+  for (let d = Math.max(1, start); d <= end; d++) widest = Math.max(widest, paneColsAt(d));
+  return (paneCols + 2 * LEAD) / CFG.revealIn * Math.sqrt(widest / paneCols);
 }
 
 /* Per-row front offset and crest width for this frame. */
@@ -1396,7 +1453,7 @@ function emitWave(open, start, end, predecessor) {
   }
   const minX = band.left - LEAD, maxX = band.right - 1 + LEAD;
   const x = from ? clamp(from.x, minX, maxX) : open ? minX : maxX;
-  const speed = waveSpeed();
+  const speed = waveSpeed(start, end);
   const duration = Math.max(0.18, Math.abs((open ? maxX : minX) - x) / speed);
   retireWaves(start, end);
   const wave = {
@@ -1561,8 +1618,8 @@ function advanceSwitches(dt) {
       updateSwitchClip(tr);
       if (tr.p >= 1) finishSwitch(state, tr);
       else {
-        const left = homeRight + (d - 1) * paneCols;
-        prepareSwitchCols(tr, left, left + paneCols);
+        const left = paneLeftCol(d);
+        prepareSwitchCols(tr, left, left + paneColsAt(d));
       }
     }
   }
@@ -1578,6 +1635,7 @@ let desiredIds = [];     // where navigation is heading
 let pendingIds = null;   // a request queued behind a running close
 let closingRange = null; // { start, end, keep } while a close is in flight
 let focusAfterOpen = null;
+let introStack = null;   // a visit's starting stack, held back until the bloom has mostly played
 
 function mountedDepth() { return Math.max(0, mountedIds.length - 1); }
 function intendedDepth() { return Math.max(0, desiredIds.length - 1); }
@@ -1672,8 +1730,8 @@ function startSwitch(depth, id) {
       center: new Float32Array(Math.max(1, cols)),
       half: new Float32Array(Math.max(1, cols))
     };
-    const left = homeRight + (depth - 1) * paneCols;
-    prepareSwitchCols(tr, left, left + paneCols);
+    const left = paneLeftCol(depth);
+    prepareSwitchCols(tr, left, left + paneColsAt(depth));
     state.switches.push(tr);
   }
   state.id = id;
@@ -1705,14 +1763,16 @@ function finishClosedSuffix() {
 /* The heart of navigation. Given the stack the user asked for:
      initial load       mount everything, no waves (the bloom is the only motion)
      close running      queue the request (latest wins)
-     sibling, deepest   in-place switch band
+     sibling, deepest   in-place switch band (only between panes of one width)
      diverges earlier   close the old branch first, then open the new one
      shorter            one close wave across every removed pane
      longer             one open wave across every new pane
-   The palette heads for the destination immediately, whatever happens. */
-function requestPageStack(requested, { initial = false, focusHeading = false } = {}) {
+   The palette heads for the destination immediately, whatever happens. Any
+   navigation cancels an intro open still waiting for the bloom. */
+function requestPageStack(requested, { initial = false, focusHeading = false, intro = false } = {}) {
   const next = validStack(requested);
   if (!next.length) return;
+  if (!intro) introStack = null;
   desiredIds = next.slice();
   applyPalette(paletteForStack(next), true, CFG.revealIn);
 
@@ -1738,7 +1798,10 @@ function requestPageStack(requested, { initial = false, focusHeading = false } =
   const nextDepth = next.length - 1;
 
   if (common < mountedIds.length && common < next.length) {
-    if (common === oldDepth && next.length === mountedIds.length) {
+    // The band swaps pages inside one pane, so a page of another width (the
+    // resume beside a normal page) closes the old pane and opens its own.
+    if (common === oldDepth && next.length === mountedIds.length &&
+        colsFor(pageById[next[common]]) === paneColsAt(common)) {
       startSwitch(common, next[common]);
       if (focusHeading) focusAfterOpen = { depth: common, id: next[common] };
       refreshGeometry();
@@ -1839,8 +1902,59 @@ function ambientCols() {
   return Math.max(1, Math.round((viewportW * 0.8 - cell) / cell));
 }
 
+/* Where each mounted pane sits: its first column and its width in columns,
+   by depth (laid out by syncSpans; index 0, the sidebar, is unused). */
+let spanLeft = [0], spanCols = [0];
+
+/* A page's pane width in columns: the one fixed unit, or, for a page that
+   asks for a width (the resume), that width as far as the screen allows. On
+   a phone that is the screen less a border cell each side: wider than the
+   unit from ~360px, so switching to or from it closes one pane, then opens
+   the other. */
+function colsFor(page) {
+  if (!page || !(page.width > 0)) return paneCols;
+  const want = Math.round((page.width + gap) / cell);
+  const room = Math.max(1, Math.floor((viewportW - 2 * cell + gap) / cell));
+  return Math.max(paneCols, Math.min(want, room));
+}
+
+/* Mounted panes sit side by side after the sidebar; the lit wall starts
+   after the last one. */
+function syncSpans() {
+  const depth = mountedDepth();
+  spanLeft.length = depth + 1;
+  spanCols.length = depth + 1;
+  let left = homeRight;
+  for (let d = 1; d <= depth; d++) {
+    const span = colsFor(pageById[mountedIds[d]]);
+    spanLeft[d] = left;
+    spanCols[d] = span;
+    left += span;
+  }
+  colorLeft = left;
+}
+
+/* A depth past the laid-out panes (a closing wave's band after its pane has
+   gone) continues in fixed units. */
+function paneColsAt(d) {
+  return d >= 1 && d < spanCols.length ? spanCols[d] : paneCols;
+}
+function paneLeftCol(d) {
+  if (d >= 1 && d < spanLeft.length) return spanLeft[d];
+  const last = spanLeft.length - 1;
+  const end = last >= 1 ? spanLeft[last] + spanCols[last] : homeRight;
+  return end + Math.max(0, d - last - 1) * paneCols;
+}
+function paneLeftPx(d) { return paneLeftCol(d) * cell; }
+function paneWidthPx(d) { return paneColsAt(d) * cell - gap; }
+function stackEndCol() {
+  const d = mountedDepth();
+  return d > 0 ? paneLeftCol(d) + paneColsAt(d) : homeRight;
+}
+
 /* Panes are one fixed 300px unit (299 + 1px gap) whenever that unit plus its
-   border cells fits; narrower screens use the nearest grid width to 90%. */
+   border cells fits; narrower screens use the nearest grid width to 90%. A
+   wide page's pane spans more columns (colsFor), set on its shell. */
 function layoutDeck() {
   const fixedCols = Math.round((300 + gap) / cell);
   const fits = cell + (fixedCols * cell - gap) + cell <= viewportW;
@@ -1849,16 +1963,22 @@ function layoutDeck() {
   paneCols = fits ? fixedCols : Math.min(compact, visible);
   homeRight = 1 + paneCols;
   const depth = mountedDepth();
-  colorLeft = homeRight + depth * paneCols;
+  syncSpans();
   sidePad = cell;
   paneTop = cell;
   paneW = paneCols * cell - gap;
   paneH = Math.max(tile, H - paneTop - cell);
   paneStride = paneCols * cell;
+  for (let d = 1; d <= depth; d++) {
+    const state = paneStates[d];
+    if (!state) continue;
+    state.shell.style.setProperty("--pane-left", paneLeftPx(d) + "px");
+    state.shell.style.setProperty("--pane-width", paneWidthPx(d) + "px");
+  }
 
   // The world always runs 80% of a viewport past the last pane, and stays
   // wide enough for any live wave's tail.
-  const lastPaneRight = sidePad + paneStride * depth + paneW;
+  const lastPaneRight = depth > 0 ? paneLeftPx(depth) + paneWidthPx(depth) : sidePad + paneW;
   let waveRight = 0;
   for (let k = 0; k < waves.length; k++) waveRight = Math.max(waveRight, waves[k].right * cell);
   const desired = Math.max(viewportW, lastPaneRight + viewportW * 0.8, waveRight + viewportW * 0.8);
@@ -1909,14 +2029,23 @@ function refreshGeometry() {
   syncGrid();
 }
 
-/* The bloom grows from the middle of the lit runway (not the viewport). */
+/* The bloom grows from the middle of the lit runway (not the viewport). Once
+   it plays it keeps that centre, even as a page opening moves the runway
+   (a jump would black out most of the wall); a new viewport re-aims it, still
+   from where the runway started. */
+let revealVW = 0, revealH = 0, revealLeft = 0;
 function updateReveal() {
-  const right = Math.max(colorLeft, Math.min(cols - 2, colorLeft + ambientCols() - 1));
-  si = (colorLeft + right) / 2;
-  sj = (rows - 1) / 2;
-  const dx = Math.max(Math.abs(colorLeft - si), Math.abs(right - si));
-  const dy = Math.max(Math.abs(1 - sj), Math.abs(rows - 2 - sj));
-  maxRevealD = Math.sqrt(dx * dx + dy * dy) + CFG.jagAmp * 0.5 + CFG.revealSoft;
+  if (sweepDone || revealVW !== viewportW || revealH !== H) {
+    if (sweepDone || !revealVW) revealLeft = colorLeft;
+    const right = Math.max(revealLeft, Math.min(cols - 2, revealLeft + ambientCols() - 1));
+    si = (revealLeft + right) / 2;
+    sj = (rows - 1) / 2;
+    const dx = Math.max(Math.abs(revealLeft - si), Math.abs(right - si));
+    const dy = Math.max(Math.abs(1 - sj), Math.abs(rows - 2 - sj));
+    maxRevealD = Math.sqrt(dx * dx + dy * dy) + CFG.jagAmp * 0.5 + CFG.revealSoft;
+    revealVW = viewportW;
+    revealH = H;
+  }
   if (!sweepDone && (jagCols !== cols || jagRows !== rows)) {
     // The rim's raggedness is a frozen noise pattern: it never flickers.
     jag = new Float32Array(cols * rows);
@@ -1985,6 +2114,9 @@ function setup() {
     // Height-only changes (browser chrome, keyboard) never move the camera.
     stage.scrollLeft = clampCamera(prevScroll);
   }
+  // Browser zoom and a move to another screen change the pixel density, not
+  // always the resume's size.
+  refreshResumes();
 }
 
 /* ======================================================================
@@ -2005,8 +2137,8 @@ function clampCamera(x) {
 
 function targetForDepth(d) {
   if (d <= 0) return 0;
-  const left = sidePad + d * paneStride;
-  const right = left + paneW;
+  const left = paneLeftPx(d);
+  const right = left + paneWidthPx(d);
   // A surviving first pane lands one cell in from the left, so a sliver of
   // the sidebar keeps it visibly connected.
   if (d === 1 && right + cell > viewportW) return clampCamera(left - cell);
@@ -2014,28 +2146,33 @@ function targetForDepth(d) {
 }
 
 function targetForCenter(d) {
-  return clampCamera(sidePad + d * paneStride + paneW / 2 - viewportW / 2);
+  return clampCamera(paneLeftPx(d) + paneWidthPx(d) / 2 - viewportW / 2);
 }
 
-/* Keep the pane plus ~100px of lights in view; don't move if that already holds.
-   Below 400px wide, centre the pane instead. */
+/* The whole stack when it fits, sidebar included. Otherwise a first pane
+   lands one cell in from the left, as on a deep link, rather than cutting
+   the sidebar mid-word (colsFor leaves it room), and a deeper one keeps the
+   pane plus ~100px of lights in view, not moving if that already holds.
+   Below 400px wide (more for a deeper wide pane), centre the pane instead. */
 function targetForOpening(d) {
+  const left = paneLeftPx(d);
+  if (left + paneWidthPx(d) + cell <= viewportW) return 0;
+  if (d === 1 && viewportW >= CFG.roomPx) return clampCamera(left - cell);
+  const room = CFG.roomPx + paneWidthPx(d) - paneW;
+  if (viewportW < room) return targetForCenter(d);
   const current = clampCamera(stage.scrollLeft);
-  const left = sidePad + d * paneStride;
-  if (viewportW >= CFG.roomPx) {
-    const first = left + CFG.roomPx - viewportW;
-    if (current < first - 0.5) return clampCamera(first);
-    if (current > left + 0.5) return clampCamera(left);
-    return current;
-  }
-  return targetForCenter(d);
+  const first = left + room - viewportW;
+  if (current < first - 0.5) return clampCamera(first);
+  if (current > left + 0.5) return clampCamera(left);
+  return current;
 }
 
 function wavePixelSpeed() {
   return (paneCols + 2 * LEAD) * cell / CFG.revealIn;
 }
 
-/* The camera's average pace matches the wipe front. */
+/* The camera averages 1 - CFG.glide of the pace of an ordinary pane's wipe
+   front, just behind it (a wide pane's runs well ahead, still in view). */
 function travelTime(target) {
   const dist = Math.abs(target - stage.scrollLeft);
   if (dist < 0.5) return 0;
@@ -2113,7 +2250,7 @@ function stepCamera(dt) {
 function syncCloseControls() {
   const depth = mountedDepth();
   const left = stage.scrollLeft;
-  const stackRight = sidePad + depth * paneStride + paneW;
+  const stackRight = depth > 0 ? paneLeftPx(depth) + paneWidthPx(depth) : sidePad + paneW;
   const allVisible = sidePad >= left - 0.5 && stackRight <= left + viewportW + 0.5;
   const next = depth > 0 && (!allVisible || (!!closingRange && stackClipped));
   if (next !== stackClipped) {
@@ -2250,6 +2387,19 @@ function setMeta(selector, attr, value) {
   if (node && value != null) node.setAttribute(attr, value);
 }
 
+/* index.html has no canonical link or og:url: one shell answers every
+   address, and link previews read only its static head, so a fixed value
+   would send a shared /resume.pdf to the home page. The script adds them. */
+function headTag(tag, key, name) {
+  let node = doc.head.querySelector(tag + "[" + key + '="' + name + '"]');
+  if (!node) {
+    node = doc.createElement(tag);
+    node.setAttribute(key, name);
+    doc.head.appendChild(node);
+  }
+  return node;
+}
+
 function syncMetadata(page) {
   const title = page === home ? siteName : page.title + " | " + siteName;
   const description = page.description || siteDescription;
@@ -2261,8 +2411,8 @@ function syncMetadata(page) {
   setMeta('meta[name="twitter:title"]', "content", title);
   setMeta('meta[name="twitter:description"]', "content", description);
   if (canonical) {
-    setMeta('link[rel="canonical"]', "href", canonical);
-    setMeta('meta[property="og:url"]', "content", canonical);
+    headTag("link", "rel", "canonical").setAttribute("href", canonical);
+    headTag("meta", "property", "og:url").setAttribute("content", canonical);
   }
 }
 
@@ -2612,6 +2762,372 @@ function showManifestoError(st) {
   box.appendChild(button);
   st.root.replaceChildren(box);
   button.focus({ preventScroll: true });
+}
+
+/* ======================================================================
+   12c. Resume
+   ====================================================================== */
+
+/* /resume.pdf is a wide pane (section 4), not the file: links to download or
+   open the PDF, then its pages, drawn by PDF.js on warm paper. Over each
+   drawing lie the PDF's own links (pages of this site open as panes, as in
+   any body) and PDF.js's transparent text layer, so the text can be
+   selected, copied and searched. PDF.js (its legacy build, which older phones
+   can run) comes from a CDN the first time it's needed: as a visit starts on
+   /resume.pdf, when a link to it is pointed at or focused, or when the pane
+   mounts; the PDF downloads alongside it. A page is drawn at its sheet's
+   size and at least twice the pixels (more on touch screens, which pinch to
+   zoom, and, where the screen allows, enough to print sharp), and again
+   when that size or the pixel density changes; on a phone, where it's
+   too small to read, a tap on the page opens the PDF itself. Printed, the
+   page is just the resume (site.css). Until the drawing arrives the sheet
+   says it's loading, and after a while offers the file; if the file or
+   PDF.js can't load (offline, a blocked CDN, opened from disk), it says so
+   and links to the file. Screen readers hear both, except a failure that
+   comes at once (offline, opened from disk): the note then arrives already
+   saying so, and may not be announced. */
+const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
+const SHEET_MAX_PIXELS = 8e6;   // per page bitmap; iOS refuses canvases past ~16.7M
+const PRINT_W = 793, PRINT_H = 1050;   // a printed page fits this box: letter or A4 paper
+const coarsePointer = !!(window.matchMedia && matchMedia("(pointer: coarse)").matches);
+let resumeLoad = null;          // Promise<{ lib, pdf }>, shared by every sheet
+let pdfjsLoad = null, pdfjsCopies = 0;
+const resumeViews = new Set();  // mounted viewers, until their pane goes
+
+/* PDF.js itself, kept for every later open. A copy that fails, to download
+   or to start its worker (which it never tries again), is swapped for a
+   fresh one; a missing or broken file is no reason to fetch another. */
+function loadPdfjs() {
+  if (!pdfjsLoad) {
+    pdfjsLoad = import(PDFJS + "pdf.min.mjs" + (pdfjsCopies ? "?retry=" + pdfjsCopies : ""));
+    pdfjsLoad.catch(dropPdfjs);
+  }
+  return pdfjsLoad;
+}
+
+function dropPdfjs() {
+  pdfjsLoad = null;
+  pdfjsCopies++;
+}
+
+function loadResume() {
+  if (!resumeLoad) {
+    const fileLoad = fetch(resumeConfig.file).then(res => {
+      if (!res.ok) throw new Error("Missing PDF " + res.url + " (HTTP " + res.status + ")");
+      return res.arrayBuffer();
+    });
+    resumeLoad = Promise.all([loadPdfjs(), fileLoad]).then(([lib, data]) => {
+      lib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs";
+      const task = lib.getDocument({ data: new Uint8Array(data), isEvalSupported: false });
+      // A document that fails takes its worker with it.
+      return task.promise.then(pdf => ({ lib, pdf }), err => {
+        task.destroy();
+        if (!err || err.name !== "InvalidPDFException") dropPdfjs();
+        throw err;
+      });
+    });
+    // A failed load is forgotten, so the next open tries again.
+    resumeLoad.catch(() => { resumeLoad = null; });
+  }
+  return resumeLoad;
+}
+
+function preloadResume() {
+  if (resumePage) loadResume().catch(() => {});
+}
+
+function pdfLink(text) {
+  const link = el("a", "text-link", text);
+  link.href = resumeConfig.file;
+  link.target = "_blank";
+  link.rel = "noopener";
+  return link;
+}
+
+function renderResume() {
+  const wrap = el("div", "resume");
+  const actions = el("p", "resume-actions");
+  const download = el("a", "text-link", "Download PDF");
+  download.href = resumeConfig.file;
+  download.setAttribute("download", "");
+  actions.append(download, pdfLink("Open PDF"));
+  const sheets = el("div", "resume-sheets");
+  // A letter-size blank holds the place until the PDF gives its real size.
+  const blank = resumeNote();
+  const loading = el("p", "resume-loading", "Loading the resume…");
+  blank.appendChild(loading);
+  sheets.appendChild(blank);
+  wrap.append(actions, sheets);
+  // Slow (a weak connection, a filtered CDN): offer the file meanwhile.
+  setTimeout(() => {
+    if (loading.isConnected) loading.append(" Taking a while? ", pdfLink("Open the PDF"), ".");
+  }, 8000);
+  showResume(sheets);
+  return wrap;
+}
+
+/* The sheet that tells how the resume is coming: a status, so a screen
+   reader hears it change. */
+function resumeNote() {
+  const box = el("div", "resume-sheet resume-note");
+  box.setAttribute("role", "status");
+  return box;
+}
+
+async function showResume(sheets) {
+  for (const view of resumeViews) if (!view.sheets.isConnected) dropResumeView(view);
+  let lib, pdf;
+  try {
+    ({ lib, pdf } = await loadResume());
+  } catch (err) {
+    resumeFailed(sheets, err);
+    return;
+  }
+  const view = { sheets, lib, pages: [], observer: null, timer: 0 };
+  try {
+    const pages = [];
+    for (let n = 1; n <= pdf.numPages; n++) pages.push(await pdf.getPage(n));
+    // A pane that closed meanwhile has nothing left to draw into.
+    if (!sheets.isConnected) return;
+    sheets.replaceChildren();
+    for (const page of pages) view.pages.push(buildSheet(view, page));
+  } catch (err) {
+    resumeFailed(sheets, err);
+    return;
+  }
+  resumeViews.add(view);
+  // A new sheet size redraws; so does a new pixel density at the same size
+  // (browser zoom, another screen), through setup() and refreshResumes.
+  if (window.ResizeObserver) {
+    view.observer = new ResizeObserver(() => refreshResume(view));
+    view.observer.observe(sheets);
+  }
+  for (const p of view.pages) paintSheet(view, p);
+}
+
+/* The text and links follow at once; the drawing after a pause (a window
+   being dragged), and only if it's off by more than a little. */
+function refreshResume(view) {
+  if (!view.sheets.isConnected) { dropResumeView(view); return; }
+  for (const p of view.pages) scaleSheet(p);
+  clearTimeout(view.timer);
+  view.timer = setTimeout(() => { for (const p of view.pages) paintSheet(view, p); }, 150);
+}
+
+function refreshResumes() {
+  for (const view of resumeViews) refreshResume(view);
+}
+
+function buildSheet(view, page) {
+  const base = page.getViewport({ scale: 1 });
+  const sheet = el("div", "resume-sheet");
+  sheet.style.aspectRatio = base.width + " / " + base.height;
+  // Printed, each page gets one sheet of paper (site.css).
+  const printW = Math.min(PRINT_W, Math.floor(PRINT_H * base.width / base.height));
+  sheet.style.setProperty("--print-width", printW + "px");
+  sheet.style.setProperty("--print-scale", String(printW / base.width));
+  view.sheets.appendChild(sheet);
+  // drawn: the scale of the drawing on show; wanted: of the one on its way.
+  const p = { page, base, sheet, printW, text: null, canvas: null, task: null, drawn: 0, wanted: 0 };
+  scaleSheet(p);
+  const text = el("div", "textLayer");
+  p.text = text;
+  sheet.appendChild(text);
+  new view.lib.TextLayer({ textContentSource: page.streamTextContent(), container: text, viewport: base })
+    .render()
+    .then(() => { if (text.isConnected) watchSelection(text); })
+    .catch(err => warn("The resume's text layer failed: " + (err && err.message || err)));
+  page.getAnnotations({ intent: "display" }).then(annotations => {
+    const layer = el("div", "resume-links");
+    for (const note of annotations) {
+      if (note.subtype !== "Link" || !note.url) continue;
+      const target = resolveLink(note.url);
+      if (!target) continue;
+      const [x1, y1, x2, y2] = base.convertToViewportRectangle(note.rect);
+      const a = el("a");
+      aimLink(a, target);
+      a.style.left = (100 * Math.min(x1, x2) / base.width).toFixed(3) + "%";
+      a.style.top = (100 * Math.min(y1, y2) / base.height).toFixed(3) + "%";
+      a.style.width = (100 * Math.abs(x2 - x1) / base.width).toFixed(3) + "%";
+      a.style.height = (100 * Math.abs(y2 - y1) / base.height).toFixed(3) + "%";
+      a.setAttribute("aria-label", note.url.replace(/^mailto:/i, "").replace(/^https?:\/\/(?:www\.)?/i, "").replace(/\/$/, ""));
+      layer.appendChild(a);
+    }
+    if (layer.childElementCount) sheet.appendChild(layer);
+  }).catch(err => warn("The resume's links failed: " + (err && err.message || err)));
+  // Too small to read on a phone: a tap opens the PDF itself.
+  sheet.addEventListener("click", e => {
+    if (!coarsePointer || sheet.clientWidth >= 520 || e.target.closest("a")) return;
+    window.open(resumeConfig.file, "_blank", "noopener");
+  });
+  return p;
+}
+
+/* The text layer (sized by --scale-factor) and the links (placed in
+   percentages of the page) follow the sheet's width at once; the drawing
+   catches up in paintSheet. */
+function scaleSheet(p) {
+  const width = p.sheet.clientWidth;
+  if (width) p.sheet.style.setProperty("--scale-factor", String(width / p.base.width));
+}
+
+function paintSheet(view, p) {
+  const width = p.sheet.clientWidth;
+  if (!width) return;
+  scaleSheet(p);
+  const dpr = window.devicePixelRatio || 1;
+  const ratio = Math.max(2, Math.min(dpr, 3)) * (coarsePointer ? 2 : 1);
+  let scale = width / p.base.width * ratio;
+  // Printed, the page is printW wide, and a narrow window leaves it too few
+  // pixels for paper: then draw up to twice the screen's (the cap below may
+  // allow fewer). Shrunk back by at most half, they look the same (any more
+  // and thin strokes drop out).
+  if (width * ratio < p.printW * 1.8) scale = Math.max(scale, width * dpr * 2 / p.base.width);
+  const pixels = p.base.width * p.base.height * scale * scale;
+  if (pixels > SHEET_MAX_PIXELS) scale *= Math.sqrt(SHEET_MAX_PIXELS / pixels);
+  const current = p.task ? p.wanted : p.drawn;
+  if (current && Math.abs(scale / current - 1) < 0.08) return;   // sharp enough already
+  if (p.task) p.task.cancel();
+  const viewport = p.page.getViewport({ scale });
+  const canvas = el("canvas");
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  canvas.setAttribute("aria-hidden", "true");
+  // Ink on clear pixels: the paper is the canvas's CSS background, which
+  // print drops for white.
+  const task = p.page.render({ canvasContext: canvas.getContext("2d"), viewport, background: "rgba(0,0,0,0)" });
+  p.task = task;
+  p.wanted = scale;
+  task.promise.then(() => {
+    if (p.task !== task) return;
+    p.task = null;
+    p.drawn = scale;
+    if (p.canvas) p.canvas.replaceWith(canvas);
+    else {
+      p.sheet.prepend(canvas);
+      void canvas.offsetWidth;   // start transparent, so the first drawing fades in
+      p.sheet.classList.add("is-drawn");
+    }
+    p.canvas = canvas;
+  }, err => {
+    if (p.task === task) p.task = null;
+    if (err && err.name === "RenderingCancelledException") return;
+    if (!p.canvas) resumeFailed(view.sheets, err);
+  });
+}
+
+function dropResumeView(view) {
+  resumeViews.delete(view);
+  if (view.observer) view.observer.disconnect();
+  clearTimeout(view.timer);
+  for (const p of view.pages) {
+    if (p.task) p.task.cancel();
+    unwatchSelection(p.text);
+  }
+}
+
+function resumeFailed(sheets, err) {
+  warn("The resume couldn't be shown: " + (err && err.message || err));
+  if (!sheets.isConnected) return;
+  const note = el("p", null, "The resume couldn't be shown here. ");
+  note.append(pdfLink("Open the PDF"), ".");
+  // The loading note says it, while it's there, so the change is heard.
+  let box = sheets.querySelector(".resume-note");
+  if (!box) {
+    box = resumeNote();
+    sheets.replaceChildren(box);
+  }
+  box.classList.add("resume-error");
+  box.replaceChildren(note);
+}
+
+/* A drag that ends just past a line's last letter would select on to the end
+   of the page. PDF.js's own viewer keeps an empty block after the text and
+   moves it behind the selection's moving end; this is that code
+   (TextLayerBuilder in pdfjs-dist 4.10.38, web/pdf_viewer.mjs; Copyright 2024
+   Mozilla Foundation, Apache License 2.0). Firefox doesn't need it. The
+   pointermove handler is the site's own: over that block, Chrome leaves the
+   selection where the pointer last crossed the letters, often a few short of
+   the line's end, so a drag there takes it to the end of the line beside the
+   pointer. A drag that began on the bare paper is left alone: Chrome starts
+   it from a stray caret, often rows away. */
+const textLayers = new Map();   // .textLayer -> its .endOfContent
+let selectionHandlers = null, selectionNative = null;
+
+function watchSelection(layer) {
+  const end = el("div", "endOfContent");
+  layer.append(end);
+  layer.addEventListener("mousedown", () => layer.classList.add("selecting"));
+  textLayers.set(layer, end);
+  if (selectionNative === null) selectionNative = getComputedStyle(end).getPropertyValue("-moz-user-select") === "none";
+  if (selectionHandlers) return;
+  const reset = (end, layer) => {
+    layer.append(end);
+    end.style.width = "";
+    end.style.height = "";
+    layer.classList.remove("selecting");
+  };
+  let pointerDown = false, pressedBlank = false, prevRange = null;
+  selectionHandlers = [
+    [document, "pointerdown", e => {
+      pointerDown = true;
+      pressedBlank = e.target instanceof Element && (e.target.classList.contains("textLayer") || e.target.classList.contains("endOfContent"));
+    }],
+    [document, "pointerup", () => { pointerDown = false; textLayers.forEach(reset); }],
+    [window, "blur", () => { pointerDown = false; textLayers.forEach(reset); }],
+    [document, "keyup", () => { if (!pointerDown) textLayers.forEach(reset); }],
+    [document, "selectionchange", () => {
+      const selection = document.getSelection();
+      if (!selection.rangeCount) { textLayers.forEach(reset); return; }
+      const active = new Set();
+      for (let i = 0; i < selection.rangeCount; i++) {
+        const range = selection.getRangeAt(i);
+        for (const layer of textLayers.keys()) if (range.intersectsNode(layer)) active.add(layer);
+      }
+      for (const [layer, end] of textLayers) {
+        if (active.has(layer)) layer.classList.add("selecting");
+        else reset(end, layer);
+      }
+      if (selectionNative) return;
+      const range = selection.getRangeAt(0);
+      const modifyStart = prevRange && (range.compareBoundaryPoints(Range.END_TO_END, prevRange) === 0 ||
+        range.compareBoundaryPoints(Range.START_TO_END, prevRange) === 0);
+      let anchor = modifyStart ? range.startContainer : range.endContainer;
+      if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode;
+      const layer = anchor.parentElement && anchor.parentElement.closest(".textLayer");
+      const end = layer && textLayers.get(layer);
+      if (end) {
+        end.style.width = layer.style.width;
+        end.style.height = layer.style.height;
+        anchor.parentElement.insertBefore(end, modifyStart ? anchor : anchor.nextSibling);
+      }
+      prevRange = range.cloneRange();
+    }],
+    [document, "pointermove", e => {
+      if (selectionNative || pressedBlank || !(e.buttons & 1) || e.pointerType === "touch") return;
+      const over = e.target instanceof Element && e.target.classList.contains("endOfContent");
+      const layer = over && e.target.closest(".textLayer");
+      const selection = document.getSelection();
+      if (!layer || !selection.rangeCount) return;
+      let last = null, lastRight = -Infinity;
+      for (const span of layer.querySelectorAll("span:not(.markedContent)")) {
+        const box = span.getBoundingClientRect();
+        if (box.top <= e.clientY && e.clientY < box.bottom && box.right <= e.clientX && box.right > lastRight) {
+          last = span;
+          lastRight = box.right;
+        }
+      }
+      const text = last && last.lastChild;
+      if (text && text.nodeType === Node.TEXT_NODE) selection.extend(text, text.length);
+    }]
+  ];
+  for (const [target, type, fn] of selectionHandlers) target.addEventListener(type, fn);
+}
+
+function unwatchSelection(layer) {
+  if (!textLayers.delete(layer) || textLayers.size || !selectionHandlers) return;
+  for (const [target, type, fn] of selectionHandlers) target.removeEventListener(type, fn);
+  selectionHandlers = null;
 }
 
 /* ======================================================================
@@ -3297,6 +3813,7 @@ function aimBloom() {
 
 // Per-frame field constants, shared with baseFill().
 let fBx = 0, fBy = 0, fBz = 0, fCx = 0, fCy = 0, fCz = 0, fHue = 0, fDim = CFG.dim;
+let colDepth = new Uint8Array(0);   // column -> pane depth, refilled by draw()
 
 function tileFill(s, b) {
   if (b > 1) b = 1;
@@ -3388,13 +3905,20 @@ function draw() {
   const favI = colsL - 2, favJ = rowsL - 2;
   let favSeen = false;
 
+  // Which pane each column of the stack belongs to (panes can differ in width).
+  if (colDepth.length < colorLeft) colDepth = new Uint8Array(colorLeft + 64);
+  for (let d = 1, depth = mountedDepth(); d <= depth; d++) {
+    const left = paneLeftCol(d), right = Math.min(left + paneColsAt(d), colorLeft);
+    for (let i = left; i < right; i++) colDepth[i] = d;
+  }
+
   const i0 = Math.max(iMin, homeRight), i1 = Math.min(iMax, lightRight - 1);
   for (let j = 1; j < rowsL - 1; j++) {
     const py = j * cell, row = j * colsL;
     for (let i = i0; i <= i1; i++) {
       let paneDepth = 0, state = null;
       if (i < colorLeft) {
-        paneDepth = ((i - homeRight) / paneCols | 0) + 1;
+        paneDepth = colDepth[i];
         state = paneStates[paneDepth];
         if (!state) continue;
       }
@@ -3504,7 +4028,7 @@ function frame(now) {
   openT += dt;
 
   updateWaves(reducedMotion ? Math.max(dt, 1) : dt);
-  colorLeft = homeRight + mountedDepth() * paneCols;
+  colorLeft = stackEndCol();
   advanceSwitches(dt);
   finishClosedSuffix();
   syncPaneInteractivity();
@@ -3516,6 +4040,13 @@ function frame(now) {
   if (!bloomAimed) aimBloom();
   revealP = reducedMotion ? 1 : sm(openT / CFG.revealIn);
   if (revealP >= 1) sweepDone = true;
+  // A visit that starts on the resume sees the site arrive first: its pane
+  // wipes in once the bloom has mostly filled the wall.
+  if (introStack && openT >= CFG.revealIn * 0.75) {
+    const stack = introStack;
+    introStack = null;
+    requestPageStack(stack, { intro: true });
+  }
 
   preparePointer(dt);
   draw();
@@ -3563,6 +4094,16 @@ deck.addEventListener("click", e => {
     if (button) copyEmail(button);
   }
 });
+
+// Pointing at (or tabbing to) a link to the resume starts fetching it.
+function preloadFromLink(e) {
+  const a = e.target instanceof Element ? e.target.closest("a[data-page-id], a[data-route]") : null;
+  if (a && resumePage && (a.dataset.pageId || a.dataset.route) === resumePage.id) preloadResume();
+}
+deck.addEventListener("pointerover", preloadFromLink);
+deck.addEventListener("focusin", preloadFromLink);
+paneStack.addEventListener("pointerover", preloadFromLink);
+paneStack.addEventListener("focusin", preloadFromLink);
 
 // Hovering a sidebar link previews its page's palette, unless a page with a
 // palette of its own is already open.
@@ -3649,15 +4190,20 @@ addEventListener("pageshow", e => {
 });
 
 /* Boot: mount the route's whole stack at once (no wipes), lay out, snap the
-   palette and camera. The intro bloom is the only motion on load. A deep link
-   to /manifesto boots the stack it was opened over (just the sidebar on a
-   first visit) and opens the Manifesto on top; the bloom then plays when it
-   closes. */
+   palette and camera. The intro bloom is the only motion on load, except on
+   a page that asks to wait for it (the resume): the site arrives with
+   everything above that page, and the page wipes in as the bloom finishes
+   (see frame). A deep link to /manifesto boots the stack it was opened over
+   (just the sidebar on a first visit) and opens the Manifesto on top; the
+   bloom then plays when it closes. */
 const startManifesto = isManifestoPath(routePathFromLocation());
 const bootState = history.state;
 const startRoute = startManifesto ? { page: home, needsReplace: false } : routeFromLocation();
 const savedStack = startManifesto && bootState && Array.isArray(bootState.siteStack) ? validStack(bootState.siteStack) : null;
-requestPageStack(savedStack || primaryChainFor(startRoute.page), { initial: true });
+const startStack = validStack(savedStack || primaryChainFor(startRoute.page));
+const holdBack = !startManifesto && !reducedMotion && startRoute.page.introOpen && startStack.length > 1;
+if (startRoute.page === resumePage) preloadResume();
+requestPageStack(holdBack ? startStack.slice(0, -1) : startStack, { initial: true });
 initSound();
 setup();
 snapPalette();
@@ -3665,8 +4211,9 @@ panToDepth(mountedDepth(), { animate: false, opening: mountedDepth() > 0 });
 syncPaneInteractivity();
 // A reload keeps the entry's own way back.
 const startBack = !!(startManifesto && bootState && bootState.manifestoBack === true);
-commitHistory("replace", startManifesto ? MANIFESTO_PATH : startRoute.page.path, desiredIds, true,
+commitHistory("replace", startManifesto ? MANIFESTO_PATH : startRoute.page.path, startStack, true,
   startManifesto ? { manifestoBack: startBack } : null);
+if (holdBack) introStack = startStack;
 syncMetadata(startRoute.page);
 injectStructuredData();
 deck.classList.add("show");

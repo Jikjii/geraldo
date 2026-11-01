@@ -10,9 +10,11 @@
  * ("/portfolio/" serves it at http://localhost:4321/portfolio/, "/" at the
  * root). "/" redirects to that folder. Page addresses without a file extension
  * (like /portfolio/work/company-one) get index.html, as 404.html does on GitHub
- * Pages. Missing files are 404s, and so are files spelled with the wrong
- * letter case (assets/Photo.JPG for assets/photo.jpg): GitHub Pages is
- * case-sensitive even where your disk is not.
+ * Pages. A folder serves its index.html, and its address without the slash
+ * redirects to the one with it, as on GitHub Pages (resume.pdf/ is one: it
+ * answers the Resume's address). Missing files are 404s, and so are files
+ * spelled with the wrong letter case (assets/Photo.JPG for assets/photo.jpg):
+ * GitHub Pages is case-sensitive even where your disk is not.
  */
 import http from "node:http";
 import { createReadStream, readFileSync, realpathSync } from "node:fs";
@@ -153,6 +155,8 @@ const server = http.createServer(async (req, res) => {
   if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) return send(res, 403, "Forbidden\n");
 
   const found = await fileAt(filePath);
+  // A folder lives at its address with a slash; GitHub Pages redirects there.
+  if (found && found.filePath !== filePath && !rawPath.endsWith("/")) return redirect(res, rawPath + "/" + search);
   if (found) return serveFile(req, res, found);
 
   // Page addresses have no extension: hand them to the single-page app.

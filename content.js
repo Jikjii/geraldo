@@ -99,6 +99,25 @@ window.SITE = {
     },
   },
 
+  // Resume: /resume.pdf opens it in a wide pane, inside the site. Opened from a
+  // shared link, the site loads first and then the resume wipes in: its pages,
+  // with working links and selectable text, under links to download or open
+  // the PDF itself. Link to it with url: "/resume.pdf" (see `social` below).
+  //   file:    the PDF (relative to the site's folder, like every address here
+  //            that starts with "/"). To update your resume, replace this file
+  //            and keep its name. For a form that wants the PDF itself, give
+  //            this file's full address, not /resume.pdf.
+  //   label:   the pane's title (and the browser tab's).
+  //   palette: optional, the light wall's colours while it's open.
+  // /resume.pdf is a page, not the file: on GitHub Pages it is served by
+  // resume.pdf/index.html, an exact copy of index.html. Set `resume: false`
+  // to remove the page (then remove that folder and the link too, and drop
+  // "&& cp index.html resume.pdf/index.html" from the top of index.html).
+  resume: {
+    label: "Resume",
+    file: "/assets/Geraldo_Grell_Resume.pdf",
+  },
+
   // Work: the first list in the sidebar. Each item opens a pane at /work/<slug>.
   //   palette: a name from the palettes list at the bottom of this file,
   //            or your own list of colours, e.g. ["#ff7a59", "#ffd6a5", "#ffe566"].
@@ -148,6 +167,17 @@ window.SITE = {
         We're starting with cosplayers in New York City, with an iPhone beta on TestFlight. [Request access](https://joincrewroom.com/beta).
       `,
     },
+    {
+      title: "Manga Tag Assistant",
+      slug: "manga-tag-assistant",
+      palette: "rose",
+      description: "Manga Tag Assistant reads a manga's synopsis and tags it with the genres and themes that fit, from a set of 20.",
+      body: `
+        I built Manga Tag Assistant to tag a manga from its synopsis: it reads the description and picks out the genres and themes that fit, from a set of 20.
+
+        It's a multi-label classifier, built with Python, PyTorch, DistilBERT, scikit-learn and Streamlit, and it scores 0.60 micro-F1, against 0.39 for the baseline.
+      `,
+    },
   ],
 
   // Optional extra groups that work like Projects (a sidebar link that opens a list).
@@ -167,7 +197,8 @@ window.SITE = {
   ],
 
   // Links at the bottom of the sidebar. The Email button is added after them.
-  // Links to files on this site (like /resume.pdf) open in a new tab.
+  // "/resume.pdf" opens the Resume pane (see `resume` above); links to files
+  // on this site (like /assets/cv.pdf) open in a new tab.
   social: [
     { label: "GitHub", url: "https://github.com/Jikjii" },
     { label: "X", url: "https://x.com/GERALDONOMICS" },

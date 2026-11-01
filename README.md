@@ -5,7 +5,8 @@ wall of warm light tiles. Opening a page switches its tiles off, one jagged
 column at a time, to reveal the text underneath. Every page can have its own
 palette.
 
-Plain HTML, CSS and JavaScript. No framework, no build step, no dependencies.
+Plain HTML, CSS and JavaScript. No framework, no build step, nothing to
+install (the Resume loads PDF.js from a CDN when it's needed).
 
 Design inspired by [shreygups.com](https://shreygups.com). This is an original
 implementation; none of that site's code, fonts, audio or writing is included.
@@ -14,10 +15,12 @@ implementation; none of that site's code, fonts, audio or writing is included.
 
 | File | What it is |
 |---|---|
-| `content.js` | **Everything you edit**: name, bio, pages, links, palettes, sound, the Manifesto's settings. |
+| `content.js` | **Everything you edit**: name, bio, pages, links, palettes, sound, the Manifesto's and the Resume's settings. |
 | `manifesto.js` | The text of the Manifesto (Markdown). Loaded only when someone opens it. |
 | `index.html` | The page shell: the site's folder (`<base href>`), meta tags for link previews, fonts, the no-JavaScript fallback. |
 | `404.html` | An exact copy of `index.html` (the deep-link fallback on GitHub Pages). |
+| `resume.pdf/index.html` | Another exact copy of `index.html`. It answers `/resume.pdf`, the [Resume](#resume)'s address. |
+| `assets/Geraldo_Grell_Resume.pdf` | The resume itself: the PDF the Resume pane shows and its links download. |
 | `.nojekyll` | Empty. Tells GitHub Pages to serve the files as they are, without Jekyll. |
 | `.gitignore` | Keeps local tool settings (`.claude/`) and macOS `.DS_Store` files out of the repository. |
 | `assets/site.css` | Styles. The typeface and colours are variables at the top. |
@@ -50,9 +53,11 @@ themselves.
 - **`groups`**: more lists that work like Projects (for example "Writing"),
   each with a `title`, `slug` and `items`, and optionally an `intro`, a
   `palette` and a `description`.
+- **`resume`**: the Resume pane at `/resume.pdf` (see [Resume](#resume)).
 - **`social`**: the links at the bottom of the sidebar. The Email button, which
-  copies your address, comes after them. A link to a file on this site, like
-  `{ label: "Resume", url: "/resume.pdf" }`, opens it in a new tab.
+  copies your address, comes after them. `{ label: "Resume", url: "/resume.pdf" }`
+  opens the Resume pane; a link to a file on this site, like `/assets/cv.pdf`,
+  opens it in a new tab.
 
 Page bodies are Markdown inside backticks, so they can span several lines:
 
@@ -72,7 +77,7 @@ Supported: paragraphs, links, `*italics*`, `**bold**`, `` `code` ``,
 `![images](/assets/photo.jpg)`. HTML is shown as plain text, never run.
 Links to your own pages (`[my projects](/projects)`) open as panes, in the
 same place the sidebar would open them; other sites open in a new tab, and so
-do files on this site, like `/resume.pdf`.
+do files on this site, like `/assets/cv.pdf`.
 
 Addresses that start with `/` (in bodies, the bio, link `url`s and
 `sound.src`) are relative to **the site's folder**, not the domain. Write
@@ -93,14 +98,14 @@ says "content.js failed to load"). Put a backslash in front: write `` \` `` for 
 `` \`code\` ``, and `\${` for `${`.
 
 Also update the few placeholders in `index.html` that link previews read
-(title, description, the site address in the canonical link, `og:url`,
-`og:image` and `twitter:image`, the no-JavaScript fallback), and check the
+(title, description, the site address in `og:image` and `twitter:image`,
+the no-JavaScript fallback), and check the
 `<base href>` at the top of its `<head>` (see
 [Deploy](#deploying-to-github-pages-under-a-sub-folder)). Then copy it over
-the 404 page:
+the 404 page and the Resume's page:
 
 ```sh
-cp index.html 404.html
+cp index.html 404.html && cp index.html resume.pdf/index.html
 ```
 
 ## Manifesto
@@ -188,6 +193,48 @@ the film *Ghost in the Shell* (1995); its rights belong to their owners. It
 is used here as a reference. Replace it with your own image if you prefer,
 or if you publish this site somewhere its use isn't appropriate.
 
+## Resume
+
+`https://jikjii.github.io/geraldo/resume.pdf` opens the site with the resume
+inside it. The sidebar and the light wall arrive first; as the bloom
+finishes, a wide pane wipes in with the PDF's pages on warm paper, under
+**Download PDF** and **Open PDF**. The resume's own links work, and its text
+can be selected and copied. Printing it, or saving it as a PDF from the
+print dialog, gives just the resume on white paper. The sidebar's **Resume**
+link opens the same pane. On a phone, where the page is too small to read, a
+tap on it opens the PDF full size.
+
+- **To update the resume**, replace `assets/Geraldo_Grell_Resume.pdf` with
+  the new PDF, keeping the name, and push. Nothing else changes.
+- **When a form wants the file itself** (an application's "resume URL"
+  field, say), give it
+  `https://jikjii.github.io/geraldo/assets/Geraldo_Grell_Resume.pdf`.
+  `/resume.pdf` is a page: a program that downloads it gets the site's HTML,
+  not a PDF.
+- In `content.js`, `resume` sets the PDF's address (`file`), the pane's title
+  (`label`) and, optionally, its `palette`. `resume: false` removes the page;
+  then also delete the `resume.pdf` folder and the sidebar link, and drop
+  `&& cp index.html resume.pdf/index.html` from the copy command at the top
+  of `index.html`.
+
+**How `/resume.pdf` works.** An address ending in `.pdf` has no page of its
+own, so on GitHub Pages the folder `resume.pdf/` holds an exact copy of
+`index.html`: GitHub Pages sends `/geraldo/resume.pdf` on to
+`/geraldo/resume.pdf/` and serves that copy, and the script opens the Resume
+and tidies the address back to `/geraldo/resume.pdf`. Keep the copy
+identical to `index.html` (see the `cp` line above). `dev.mjs` does the
+same: it redirects to the folder and serves the copy.
+
+The pages are drawn by [PDF.js](https://mozilla.github.io/pdf.js/) 4.10.38
+(its legacy build, which older phones can run), loaded from jsDelivr the
+first time it's needed: as a visit starts on `/resume.pdf`, or when a visitor
+points at the Resume link. The PDF downloads alongside it. The pane is wider
+than the others (800px where the screen allows; a phone's width on a phone),
+and its wipe runs up to about 1.6 times as fast, so it doesn't drag. While
+the resume loads, the pane says so, and after about eight seconds offers the
+PDF itself; if PDF.js or the file can't load, the pane says so and links to
+the PDF.
+
 ## Preview locally
 
 You need [Node.js](https://nodejs.org) 18 or newer.
@@ -205,7 +252,8 @@ changing the folder. Like GitHub Pages, it treats file names as
 case-sensitive.
 
 You can also double-click `index.html`. Opened from disk, pages use
-addresses like `index.html#/work/company-one`.
+addresses like `index.html#/work/company-one`. The Resume needs the server,
+though: from disk it shows a link to the PDF instead of its pages.
 
 ## Deploy
 
@@ -238,13 +286,14 @@ A repository named `geraldo` under the account `Jikjii` is published at
 1. In `index.html`, set `<base href="/geraldo/">` (the repository name
    between slashes).
 2. In `content.js`, set `url: "https://jikjii.github.io/geraldo"`.
-3. In `index.html`, point the canonical link and `og:url` at
-   `https://jikjii.github.io/geraldo/`, and `og:image` and `twitter:image`
-   at `https://jikjii.github.io/geraldo/assets/og.png`.
-4. Copy the page over the 404 page, so deep links boot the site:
+3. In `index.html`, point `og:image` and `twitter:image` at
+   `https://jikjii.github.io/geraldo/assets/og.png`. (There is no canonical
+   link or `og:url` to set: the script adds them from `url`.)
+4. Copy the page over the 404 page and the Resume's page, so deep links
+   boot the site:
 
    ```sh
-   cp index.html 404.html
+   cp index.html 404.html && cp index.html resume.pdf/index.html
    ```
 
 5. Push everything (including the empty `.nojekyll`; `.gitignore` keeps
@@ -259,7 +308,9 @@ normally, but search engines skip such addresses, so expect only the home
 page to be indexed. Link previews (Slack, LinkedIn, iMessage, X) also read
 that 404 response and the home page's tags, so a shared deep link previews
 as the home page, or not at all. Share the home address when the preview
-matters.
+matters. `/geraldo/resume.pdf` is the exception: its folder answers it with a
+normal 200 (see [Resume](#resume)), so its preview shows the home page's
+title, description and image, and a click on it still opens the resume.
 
 A `username.github.io` repository is served at the root of its domain
 instead: use `<base href="/">` there.
@@ -268,8 +319,9 @@ instead: use `<base href="/">` there.
 
 For these, set `<base href="/">`, set `url` and the addresses in
 `index.html` to your domain, and copy `index.html` to `404.html` (except on
-Cloudflare Pages, below). `vercel.json` and `_redirects` are written for a
-site at the root of its domain; they have no effect on GitHub Pages.
+Cloudflare Pages, below) and to `resume.pdf/index.html`. `vercel.json` and
+`_redirects` are written for a site at the root of its domain; they have no
+effect on GitHub Pages.
 
 - **Vercel**: import the repository, set Framework Preset to "Other", and
   leave the build command empty. `vercel.json` routes page addresses to
@@ -290,12 +342,13 @@ GitHub Pages:
 - **Added to this repository** (`geraldo`): the site moves to the root
   of the domain (`https://your-domain/`). Set `<base href="/">` in
   `index.html`, set `url` in `content.js` to the new address, replace
-  `https://jikjii.github.io/geraldo` in `index.html` (canonical link,
-  `og:url`, `og:image`, `twitter:image`), and copy it to `404.html` again.
+  `https://jikjii.github.io/geraldo` in `index.html` (`og:image`,
+  `twitter:image`), and copy it to `404.html` and `resume.pdf/index.html`
+  again.
 - **Added to your `username.github.io` repository**: this site stays in its
   folder (`https://your-domain/geraldo/`). Keep `<base href="/geraldo/">`
-  and change only `url`, the canonical link, `og:url`, `og:image` and
-  `twitter:image`, then copy `index.html` to `404.html` again.
+  and change only `url`, `og:image` and `twitter:image`, then copy
+  `index.html` to `404.html` and `resume.pdf/index.html` again.
 
 On other hosts, a custom domain serves the site at its root: use
 `<base href="/">` and update the same addresses.
@@ -345,7 +398,8 @@ at weights 400 and 500 (plus italic) from Google Fonts. It loads with
 `display=block`, so text appears once the font is ready instead of flashing
 in a fallback first. To change it:
 
-1. Replace the Google Fonts `<link>` in `index.html` (and `404.html`).
+1. Replace the Google Fonts `<link>` in `index.html` (and its copies,
+   `404.html` and `resume.pdf/index.html`).
 2. Change `--font` at the top of `assets/site.css`.
 3. Optionally retune the `"Schibsted Grotesk Fallback"` metrics in
    `site.css`. They only matter if the web font fails to load.
@@ -382,9 +436,13 @@ first click or key press (browsers don't allow sound before that).
 - In the Manifesto, **Space** or **Enter** skips the opening, **Esc** closes
   it, and focus returns to the Manifesto link. It is a dialog: Tab stays
   inside it.
+- The Resume's text is real text over the drawing: it can be selected,
+  copied, searched and read by screen readers, and its links take focus like
+  any other.
 - With "reduce motion" turned on in the operating system, the intro bloom is
-  skipped, pages open and close instantly, and the wall stops drifting: it
-  only reacts to your pointer. The Manifesto opens straight on its collage.
+  skipped, pages open and close instantly (the Resume too, without waiting),
+  and the wall stops drifting: it only reacts to your pointer. The Manifesto
+  opens straight on its collage.
 - Visitors without JavaScript see your name, bio and links as plain text
   (the fallback in `index.html`); the pages themselves need JavaScript.
 
@@ -393,16 +451,18 @@ first click or key press (browsers don't allow sound before that).
 - The wall is one canvas of 19px tiles on a 20px grid. The sidebar sits above
   it and opened pages sit **below** it.
 - A page "opens" when the canvas clears the tiles over it, cell by cell,
-  behind a jagged front that moves at a constant 266px/s and carries a band
-  of light. Closing paints the tiles back from right to left, then removes the
-  page.
+  behind a jagged front that moves at 266px/s (up to about 1.6 times that
+  across the wide Resume pane) and carries a band of light. Closing paints
+  the tiles back from right to left, then removes the page.
 - Colour comes from two slow value-noise fields: one picks the palette
   position, one sets the brightness. Palettes crossfade over 1.3 seconds when
   you navigate.
-- Pages at the same depth swap in place under a wavy band of light that sweeps
-  down the pane.
+- Pages of the same width at the same depth swap in place under a wavy band
+  of light that sweeps down the pane; switching to or from the wider Resume
+  closes the open page first, then wipes the other in.
 - On narrow screens the stage scrolls sideways and a "camera" glides to each
-  new pane at the same pace as the wipe.
+  new pane at about the pace of an ordinary pane's wipe (the Resume's faster
+  wipe runs ahead of it, still in view).
 
 ## Credits
 
@@ -412,3 +472,7 @@ Manifesto typefaces: Shippori Mincho B1, Archivo and IBM Plex Mono (SIL Open
 Font License). Its opening sequence and title card pay homage to *Ghost in
 the Shell* (1995) and *Neon Genesis Evangelion*; the opening image is a still
 from the former, and its rights belong to their owners.
+Resume pages are drawn with [PDF.js](https://mozilla.github.io/pdf.js/) by
+Mozilla (Apache License 2.0); the text-layer rules in `assets/site.css` come
+from its `pdf_viewer.css`, and the selection handling in `assets/site.js`
+(`watchSelection`) is adapted from its `pdf_viewer.mjs`.
