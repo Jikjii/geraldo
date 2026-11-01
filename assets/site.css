@@ -559,6 +559,10 @@ nav.work-list { margin: 0 0 1em; }
   user-select: none;
 }
 .textLayer.selecting .endOfContent { top: 0; }
+/* While the mouse is pressed on the text, the PDF's links let it through, as
+   PDF.js's viewer does: a drag that crossed one would start again inside it
+   and take in the rest of the page (watchSelection in site.js). */
+.textLayer.pressed ~ .resume-links a { pointer-events: none; }
 /* PDF.js measures text on a canvas it adds to the page. */
 .hiddenCanvasElement {
   position: absolute;
@@ -578,7 +582,9 @@ nav.work-list { margin: 0 0 1em; }
    alone, one to a sheet of paper, letter or A4, on white, with the text
    still selectable. site.js gives each page its --print-width, and the
    --print-scale that sizes its text layer to match. Only these pages print
-   without the browser's margins (and its header and footer). */
+   without the browser's margins (and its header and footer). Safari ignores
+   this named page, so site.js (renderResume) adds an unnamed one, and this
+   one again after it, or Chrome would take the unnamed one. */
 @media print {
   @page resume { margin: 0; }
   html:has(.resume-sheets) body { page: resume; }

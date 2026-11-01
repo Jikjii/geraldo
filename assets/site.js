@@ -2858,6 +2858,17 @@ function renderResume() {
   blank.appendChild(loading);
   sheets.appendChild(blank);
   wrap.append(actions, sheets);
+  // Printed, the pages go without the browser's margins, and so without its
+  // header and footer (site.css). Safari ignores the named page that asks
+  // for that, so the pane brings an unnamed one, gone when the pane goes.
+  // It can't be print-only, or added as printing starts: Safari has laid out
+  // the pages with the print dialog's margins by then, and prints them
+  // enlarged with their tops cut off. Safari fits a page to the paper's
+  // width, so the sides keep a little: US Letter then prints at the size
+  // Chrome gives it, not edge to edge with its last line where many printers
+  // can't print. Chrome lets an unnamed page in a later style sheet beat the
+  // named one, so the named page comes again here, where it wins.
+  wrap.appendChild(el("style", null, "@page { margin: 0 0.12in; } @page resume { margin: 0; }"));
   // Slow (a weak connection, a filtered CDN): offer the file meanwhile.
   setTimeout(() => {
     if (loading.isConnected) loading.append(" Taking a while? ", pdfLink("Open the PDF"), ".");
@@ -3043,14 +3054,16 @@ function resumeFailed(sheets, err) {
 
 /* A drag that ends just past a line's last letter would select on to the end
    of the page. PDF.js's own viewer keeps an empty block after the text and
-   moves it behind the selection's moving end; this is that code
+   moves it behind the selection's moving end; this is adapted from that code
    (TextLayerBuilder in pdfjs-dist 4.10.38, web/pdf_viewer.mjs; Copyright 2024
-   Mozilla Foundation, Apache License 2.0). Firefox doesn't need it. The
-   pointermove handler is the site's own: over that block, Chrome leaves the
-   selection where the pointer last crossed the letters, often a few short of
-   the line's end, so a drag there takes it to the end of the line beside the
-   pointer. A drag that began on the bare paper is left alone: Chrome starts
-   it from a stray caret, often rows away. */
+   Mozilla Foundation, Apache License 2.0), and like its copy handler copies
+   the selection as plain text, here for the whole document. Firefox doesn't
+   need the block. The pointermove handlers are the site's own: over that
+   block, Chrome leaves the selection where the pointer last crossed the
+   letters, often a few short of the line's end, so a drag there takes it to
+   the end of the line beside the pointer; beside the page, see holdBeside.
+   A drag that began on the bare paper is left alone: Chrome starts it from a
+   stray caret, often rows away. */
 const textLayers = new Map();   // .textLayer -> its .endOfContent
 let selectionHandlers = null, selectionNative = null;
 
@@ -3058,6 +3071,11 @@ function watchSelection(layer) {
   const end = el("div", "endOfContent");
   layer.append(end);
   layer.addEventListener("mousedown", () => layer.classList.add("selecting"));
+  // Pressed with the mouse, the text has the PDF's links, on every page, let
+  // the pointer through until the button comes up (site.css).
+  layer.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button === 0) for (const layer of textLayers.keys()) layer.classList.add("pressed");
+  });
   textLayers.set(layer, end);
   if (selectionNative === null) selectionNative = getComputedStyle(end).getPropertyValue("-moz-user-select") === "none";
   if (selectionHandlers) return;
@@ -3067,16 +3085,119 @@ function watchSelection(layer) {
     end.style.height = "";
     layer.classList.remove("selecting");
   };
-  let pointerDown = false, pressedBlank = false, prevRange = null;
+  const release = () => { for (const layer of textLayers.keys()) layer.classList.remove("pressed"); };
+  let pointerDown = false, pressedBlank = false, pressedText = false, ownChange = false, prevRange = null;
+  // Beside a page, left or right of the paper, Safari moves the selection's
+  // end to the top of the page and Chrome takes it on down the page: after
+  // each move, whatever the page does with the event, and again on a timer
+  // while the button is held. So while a drag begun on the text is there,
+  // the end is put back at the start or end of the row beside it before each
+  // paint, and once more as the button comes up. Any other drag is left
+  // alone: begun beside the paper, it starts from a stray caret, and begun
+  // on the wall, it would stretch a selection already made.
+  let beside = null, besideFrame = 0;
+  const rowBeside = (x, y) => {
+    for (const layer of textLayers.keys()) {
+      const box = layer.getBoundingClientRect();
+      if (y < box.top || y >= box.bottom || (x >= box.left && x < box.right)) continue;
+      const right = x >= box.right;
+      // The row beside the pointer, or the nearest one when it's between
+      // rows: every span level with the nearest span (a bullet's is shorter).
+      const spans = [];
+      let near = null, gap = Infinity;
+      for (const span of layer.querySelectorAll("span:not(.markedContent)")) {
+        const b = span.getBoundingClientRect();
+        if (!b.height) continue;
+        spans.push([span, b]);
+        const off = Math.max(b.top - y, 0, y - b.bottom);
+        if (off < gap) {
+          gap = off;
+          near = b;
+        }
+      }
+      if (!near) return null;
+      const mid = (near.top + near.bottom) / 2;
+      let pick = null, edge = right ? -Infinity : Infinity;
+      for (const [span, b] of spans) {
+        if (Math.abs((b.top + b.bottom) / 2 - mid) <= near.height / 2 && (right ? b.right > edge : b.left < edge)) {
+          pick = span;
+          edge = right ? b.right : b.left;
+        }
+      }
+      const text = pick && (right ? pick.lastChild : pick.firstChild);
+      return text && text.nodeType === Node.TEXT_NODE ? [text, right ? text.length : 0] : null;
+    }
+    return null;
+  };
+  const putBeside = () => {
+    const selection = document.getSelection();
+    const at = beside && selection.rangeCount && rowBeside(beside.x, beside.y);
+    if (at && (selection.focusNode !== at[0] || selection.focusOffset !== at[1])) {
+      ownChange = true;
+      selection.extend(at[0], at[1]);
+    }
+  };
+  const holdBeside = () => {
+    besideFrame = beside && textLayers.size ? requestAnimationFrame(holdBeside) : 0;
+    putBeside();
+  };
+  const stopBeside = () => {
+    beside = null;
+    pressedText = false;
+    cancelAnimationFrame(besideFrame);
+    besideFrame = 0;
+  };
   selectionHandlers = [
     [document, "pointerdown", e => {
       pointerDown = true;
+      stopBeside();
       pressedBlank = e.target instanceof Element && (e.target.classList.contains("textLayer") || e.target.classList.contains("endOfContent"));
+      pressedText = !pressedBlank && e.button === 0 && e.target instanceof Element && !!e.target.closest(".textLayer");
     }],
-    [document, "pointerup", () => { pointerDown = false; textLayers.forEach(reset); }],
-    [window, "blur", () => { pointerDown = false; textLayers.forEach(reset); }],
+    [document, "pointerup", () => {
+      putBeside();
+      stopBeside();
+      pointerDown = false;
+      textLayers.forEach(reset);
+      release();
+    }],
+    [document, "pointercancel", () => { stopBeside(); release(); }],
+    // A drag of the selection ends with no pointerup or pointercancel in Safari.
+    [document, "dragstart", () => { stopBeside(); release(); }],
+    [document, "contextmenu", release],
+    [window, "blur", () => {
+      stopBeside();
+      pointerDown = false;
+      textLayers.forEach(reset);
+      release();
+    }],
     [document, "keyup", () => { if (!pointerDown) textLayers.forEach(reset); }],
+    // Copied, the resume is its text alone, not the transparent, absolutely
+    // placed spans that carry it: pasted into an email, those come out as
+    // dark bars with nothing to read.
+    [document, "copy", e => {
+      const selection = document.getSelection();
+      const text = selection.toString();
+      if (!e.clipboardData || !text) return;
+      for (let i = 0; i < selection.rangeCount; i++) {
+        const range = selection.getRangeAt(i);
+        if (![...textLayers.keys()].some(layer => range.intersectsNode(layer))) continue;
+        e.clipboardData.setData("text/plain", text);
+        e.preventDefault();
+        return;
+      }
+    }],
     [document, "selectionchange", () => {
+      // A change the site makes itself, with extend(), can arrive after
+      // pointerup has reset the layers: always the one made as the button
+      // comes up, and in Safari the ones made just before. They stay reset.
+      if (ownChange) {
+        ownChange = false;
+        if (!pointerDown) {
+          textLayers.forEach(reset);
+          return;
+        }
+      }
       const selection = document.getSelection();
       if (!selection.rangeCount) { textLayers.forEach(reset); return; }
       const active = new Set();
@@ -3118,7 +3239,19 @@ function watchSelection(layer) {
         }
       }
       const text = last && last.lastChild;
-      if (text && text.nodeType === Node.TEXT_NODE) selection.extend(text, text.length);
+      if (text && text.nodeType === Node.TEXT_NODE) {
+        ownChange = true;
+        selection.extend(text, text.length);
+      }
+    }],
+    [document, "pointermove", e => {
+      beside = null;
+      if (selectionNative || !pressedText || !(e.buttons & 1) || e.pointerType === "touch") return;
+      const selection = document.getSelection();
+      if (!selection.rangeCount || ![...textLayers.keys()].some(layer => layer.contains(selection.anchorNode))) return;
+      if (!rowBeside(e.clientX, e.clientY)) return;
+      beside = { x: e.clientX, y: e.clientY };
+      if (!besideFrame) besideFrame = requestAnimationFrame(holdBeside);
     }]
   ];
   for (const [target, type, fn] of selectionHandlers) target.addEventListener(type, fn);
