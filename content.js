@@ -181,9 +181,21 @@ window.SITE = {
   ],
 
   // Optional extra groups that work like Projects (a sidebar link that opens a list).
-  // Each item opens at /<group slug>/<item slug>. `intro`, `palette` and
-  // `description` are optional, just like on Projects.
+  // Each item opens at /<group slug>/<item slug>, or, with `url: "https://..."`
+  // and no body, links straight out. `intro`, `palette` and `description` are
+  // optional, just like on Projects.
   groups: [
+    {
+      title: "Affiliations",
+      slug: "affiliations",
+      description: "Organizations Geraldo Grell is part of: ColorStack, the National Society of Black Engineers (NSBE), the Society of Hispanic Professional Engineers (SHPE) and the National Society of Black Physicists (NSBP).",
+      items: [
+        { title: "ColorStack", url: "https://www.colorstack.org/" },
+        { title: "NSBE", url: "https://nsbe.org/" },
+        { title: "SHPE", url: "https://shpe.org/" },
+        { title: "NSBP", url: "https://nsbp.org/" },
+      ],
+    },
     // {
     //   title: "Writing",
     //   slug: "writing",

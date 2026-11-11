@@ -52,7 +52,8 @@ themselves.
   `projectsDescription` are optional.
 - **`groups`**: more lists that work like Projects (for example "Writing"),
   each with a `title`, `slug` and `items`, and optionally an `intro`, a
-  `palette` and a `description`.
+  `palette` and a `description`. As with projects, an item with
+  `url: "https://..."` and no `body` links straight out.
 - **`resume`**: the Resume pane at `/resume.pdf` (see [Resume](#resume)).
 - **`social`**: the links at the bottom of the sidebar. The Email button, which
   copies your address, comes after them. `{ label: "Resume", url: "/resume.pdf" }`

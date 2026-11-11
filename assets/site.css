@@ -623,19 +623,37 @@ nav.work-list { margin: 0 0 1em; }
 
 /* ---------- Short screens (phones held sideways) ---------- */
 
-/* The sidebar keeps every link on screen without scrolling: half-size gaps
-   and 20px link rows, then 20px lines throughout on the shortest screens.
-   The gaps rule stays inside .page-main so the bottom links keep their
-   zero bottom margin and line up with the sound toggle. */
-@media (max-height: 440px) {
+/* The sidebar keeps every link on screen without scrolling in windows down
+   to 356px tall, or 376px below 339px wide, where it narrows and the bio
+   takes four lines (below 279px wide, reached only by heavy zoom, it may
+   scroll). Shorter windows halve the gaps, then shorten the link rows to
+   20px (the sound toggle drops 2px to stay level with Email), then set
+   20px lines throughout, then quarter the gaps. Each step starts at the
+   shortest window the step before it fits, for the sidebar as it is now: a
+   three-line bio (four when narrow), four links above and five below. The
+   narrow steps also cover 339px wide, a pixel of slack for zoom. Each new
+   sidebar link (a work item, a group or a social link; projects and a
+   group's items add none) raises the steps by 24, 24, 20 and 20px and both
+   floors by 20px; each extra bio line raises them by 24, 24, 24 and 20px
+   and the floors by 20px. The gaps rules stay inside .page-main so the
+   bottom links keep their zero bottom margin. */
+@media (max-height: 456px), (max-width: 339px) and (max-height: 480px) {
   #about .name,
   #about .page-main p,
   #about .page-main > nav.work-list { margin-bottom: 0.5em; }
+}
+@media (max-height: 424px), (max-width: 339px) and (max-height: 448px) {
   #about .work-list a { min-height: 1.25em; }
   #about .email-copy { line-height: 1.25; }
+  #about .sound-toggle { bottom: calc(var(--cell) - 0.125rem); }
 }
-@media (max-height: 370px) {
+@media (max-height: 388px), (max-width: 339px) and (max-height: 412px) {
   #about { line-height: 1.25; }
+}
+@media (max-height: 372px), (max-width: 339px) and (max-height: 392px) {
+  #about .name,
+  #about .page-main p,
+  #about .page-main > nav.work-list { margin-bottom: 0.25em; }
 }
 
 /* ---------- Focus: quiet, keyboard-only ---------- */
